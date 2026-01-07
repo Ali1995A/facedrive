@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060a" />
+    <title>表情宇宙 / Emotion Universe</title>
+    <style>
+      :root {
+        --bg: #05060a;
+        --panel: rgba(14, 16, 24, 0.72);
+        --panel-border: rgba(255, 255, 255, 0.12);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.64);
+        --accent: #7c5cff;
+        --danger: #ff4d6d;
+        --good: #2ee59d;
+        --shadow: rgba(0, 0, 0, 0.35);
+        --radius: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 900px at 20% 10%, rgba(124, 92, 255, 0.22), transparent 60%),
+          radial-gradient(900px 600px at 80% 70%, rgba(46, 229, 157, 0.16), transparent 60%), var(--bg);
+        color: var(--text);
+        overflow: hidden;
+        touch-action: none;
+        overscroll-behavior: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC",
+          "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      }
+
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #video {
+        position: fixed;
+        right: 14px;
+        top: 14px;
+        width: 160px;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 8px 30px var(--shadow);
+        opacity: 0;
+        pointer-events: none;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(900px 700px at 50% 20%, rgba(124, 92, 255, 0.18), transparent 60%),
+          rgba(5, 6, 10, 0.66);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        z-index: 10;
+      }
+      #overlay.hidden {
+        display: none;
+      }
+
+      .card {
+        width: min(520px, calc(100vw - 32px));
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(12, 14, 22, 0.72);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+        padding: 18px 18px 16px;
+      }
+      .title {
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+      .subtitle {
+        margin: 0 0 14px;
+        color: var(--muted);
+        line-height: 1.45;
+        font-size: 14px;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+      }
+      .btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn.primary {
+        background: linear-gradient(135deg, rgba(124, 92, 255, 0.78), rgba(46, 229, 157, 0.44));
+        border-color: rgba(255, 255, 255, 0.26);
+      }
+      .btn.primary:hover {
+        background: linear-gradient(135deg, rgba(124, 92, 255, 0.9), rgba(46, 229, 157, 0.52));
+      }
+      .btn.danger {
+        border-color: rgba(255, 77, 109, 0.5);
+        background: rgba(255, 77, 109, 0.08);
+      }
+      .hint {
+        margin-top: 12px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+        line-height: 1.5;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        padding: 7px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.74);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.35);
+      }
+      .dot.good {
+        background: var(--good);
+      }
+      .dot.bad {
+        background: var(--danger);
+      }
+      #calibration {
+        margin-top: 12px;
+        padding: 12px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.18);
+      }
+      #calibration.hidden {
+        display: none;
+      }
+      .progress {
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+        margin-top: 8px;
+      }
+      .progress > div {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, rgba(124, 92, 255, 0.9), rgba(46, 229, 157, 0.8));
+      }
+
+      #hud {
+        position: fixed;
+        left: 14px;
+        bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 5;
+        pointer-events: none;
+      }
+      #hud .pill {
+        pointer-events: none;
+      }
+      #panel {
+        position: fixed;
+        right: 14px;
+        bottom: 14px;
+        width: min(360px, calc(100vw - 28px));
+        border-radius: var(--radius);
+        border: 1px solid var(--panel-border);
+        background: var(--panel);
+        box-shadow: 0 14px 60px rgba(0, 0, 0, 0.45);
+        padding: 12px;
+        z-index: 6;
+      }
+      #panel.hidden {
+        display: none;
+      }
+      #panel h3 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        letter-spacing: 0.2px;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .field {
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 10px;
+      }
+      .field label {
+        display: block;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.7);
+        margin-bottom: 6px;
+      }
+      .field select,
+      .field input[type="range"] {
+        width: 100%;
+      }
+      .field select {
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(0, 0, 0, 0.2);
+        color: rgba(255, 255, 255, 0.9);
+        border-radius: 10px;
+        padding: 8px 10px;
+        outline: none;
+      }
+      .field input[type="range"] {
+        accent-color: var(--accent);
+      }
+      .panel-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .panel-row .btn {
+        flex: 1;
+        min-width: 120px;
+      }
+
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 86px;
+        transform: translateX(-50%);
+        padding: 10px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(0, 0, 0, 0.45);
+        color: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        font-size: 13px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease, transform 180ms ease;
+        z-index: 20;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(-2px);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas"></canvas>
+      <video id="video" autoplay muted playsinline webkit-playsinline></video>
+
+      <div id="overlay">
+        <div class="card">
+          <div class="row" style="justify-content: space-between; align-items: center">
+            <h1 class="title">表情宇宙</h1>
+            <div class="pill" id="envPill"><span class="dot"></span><span id="envText">检测环境…</span></div>
+          </div>
+          <p class="subtitle">
+            通过摄像头捕捉你的表情与头部动作，实时驱动 3D 粒子宇宙。<br />
+            <span style="color: rgba(255, 255, 255, 0.75)"
+              >隐私说明：视频仅在本地用于互动处理，不会上传或存储。</span
+            >
+          </p>
+          <div class="row">
+            <button class="btn primary" id="startBtn">开始体验</button>
+            <button class="btn" id="demoBtn">仅演示模式</button>
+            <button class="btn danger" id="helpBtn">打不开？</button>
+          </div>
+
+          <div id="calibration" class="hidden">
+            <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center">
+              <div style="font-weight: 700; font-size: 13px">校准中</div>
+              <div class="pill"><span class="dot" id="calibDot"></span><span id="calibText">准备摄像头…</span></div>
+            </div>
+            <div class="hint" id="calibHint">请将脸对准中央，保持 1 秒钟稳定。</div>
+            <div class="progress"><div id="calibBar"></div></div>
+          </div>
+
+          <div class="hint" id="helpText" style="display: none">
+            - 摄像头需要 HTTPS（Vercel/Netlify 等静态托管默认满足）<br />
+            - 微信里可能不支持全屏/权限更严格：建议右上角“在浏览器打开”<br />
+            - iPad Pro 1 代/低端机若卡顿：在面板里切换到 Low
+          </div>
+        </div>
+      </div>
+
+      <div id="hud">
+        <div class="pill"><span class="dot" id="trackDot"></span><span id="trackText">未启动</span></div>
+        <div class="pill"><span style="color: rgba(255, 255, 255, 0.7)">提示：</span><span>点击画面切换面板</span></div>
+      </div>
+
+      <div id="panel" class="hidden">
+        <h3>控制台</h3>
+        <div class="grid">
+          <div class="field">
+            <label for="modeSelect">互动模式</label>
+            <select id="modeSelect">
+              <option value="resonance">Resonance（共振）</option>
+              <option value="burst">Burst（爆发）</option>
+              <option value="drift">Drift（漂移）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="qualitySelect">性能档位</label>
+            <select id="qualitySelect">
+              <option value="auto">Auto</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="sensitivityRange">灵敏度</label>
+            <input id="sensitivityRange" type="range" min="0.5" max="2.0" step="0.01" value="1.0" />
+          </div>
+          <div class="field">
+            <label for="particleRange">粒子强度</label>
+            <input id="particleRange" type="range" min="0.4" max="1.2" step="0.01" value="1.0" />
+          </div>
+          <div class="field">
+            <label for="colorPicker">粒子颜色</label>
+            <input id="colorPicker" type="color" value="#9bb7ff" style="height: 38px; width: 100%; border: 0; background: transparent" />
+          </div>
+        </div>
+        <div class="panel-row">
+          <button class="btn" id="fullscreenBtn">全屏</button>
+          <button class="btn" id="togglePreviewBtn">预览</button>
+        </div>
+      </div>
+
+      <div id="toast"></div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <!-- MediaPipe FaceMesh -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
