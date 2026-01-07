@@ -164,6 +164,7 @@
   let faceBusy = false;
   let faceLastSentAt = 0;
   let faceTrackingEnabled = false;
+  let lastFaceResultAt = 0;
 
   const faceState = {
     ok: false,
@@ -259,6 +260,11 @@
 
     stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
     video.srcObject = stream;
+    // iOS/WeChat can be picky; ensure inline playback stays active.
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
     await video.play().catch(() => {});
     await waitForVideoReady(video, 9000);
   }
@@ -288,11 +294,25 @@
     faceMesh.onResults(onFaceResults);
   }
 
+  function ensureFaceMeshReady() {
+    if (!faceMesh) {
+      initFaceMesh();
+      return;
+    }
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: !!quality.refineLandmarks,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+  }
+
   const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const safeDiv = (a, b, fallback = 0) => (!b || !Number.isFinite(b) ? fallback : a / b);
 
   function onFaceResults(results) {
     faceState.ok = true;
+    lastFaceResultAt = performance.now();
     const lm = results.multiFaceLandmarks && results.multiFaceLandmarks[0];
     faceState.hasFace = !!lm;
     if (!lm) return;
@@ -609,7 +629,8 @@
         depthTest: false,
         renderIntervalMs: Math.max(quality.renderIntervalMs || 0, 33),
         particleUpdateIntervalMs: Math.max(quality.particleUpdateIntervalMs || 0, 33),
-        faceFrameIntervalMs: Math.max(quality.faceFrameIntervalMs || 0, 120),
+        // WeChat/iPad Pro 1 can "stall" FaceMesh; keep requests reasonably frequent.
+        faceFrameIntervalMs: Math.max(quality.faceFrameIntervalMs || 0, 80),
       };
     }
     envText.textContent = `${IS_WECHAT ? "微信内置浏览器" : "系统浏览器"} · ${qualityTier.toUpperCase()}`;
@@ -1142,12 +1163,27 @@
 
     try {
       await initCamera();
-      initFaceMesh();
+      ensureFaceMeshReady();
       faceTrackingEnabled = true;
       // Always keep the camera preview hidden (no top-right mini window).
       video.style.opacity = "0";
       setTrackingStatus();
       requestAnimationFrame(faceLoop);
+      if (LITE_DEVICE) {
+        const startedAt = performance.now();
+        const t = setInterval(() => {
+          if (!calibrationState.active) {
+            clearInterval(t);
+            return;
+          }
+          const waited = performance.now() - startedAt;
+          if (waited > 1800 && lastFaceResultAt === 0) {
+            calibText.textContent = "加载中…（微信/iPad 可能较慢）";
+            calibHint.textContent = "请保持页面不切换，稍等片刻。";
+            clearInterval(t);
+          }
+        }, 300);
+      }
     } catch (err) {
       faceTrackingEnabled = false;
       setTrackingStatus();
@@ -1168,4 +1204,11 @@
   updateMode();
   video.style.opacity = "0";
   setTrackingStatus();
+
+  // Prewarm FaceMesh assets on slow environments to avoid long "calibration" stalls.
+  if (LITE_DEVICE) {
+    try {
+      ensureFaceMeshReady();
+    } catch {}
+  }
 })();
