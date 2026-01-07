@@ -513,10 +513,11 @@
     // Tuned to resemble the Las Vegas Sphere emoji proportions:
     // eyes sit higher & wider; mouth sits lower.
     EYE_R: 1.9,
-    EYE_Y: 2.0,
+    // Move features down ~70% (relative to previous anchors)
+    EYE_Y: 0.6,
     EYE_X: 4.1,
     MOUTH_R: 6.4,
-    MOUTH_Y: -3.0,
+    MOUTH_Y: -5.1,
     MOUTH_START: Math.PI * 1.18,
     MOUTH_END: Math.PI * 1.82,
   };
@@ -772,7 +773,8 @@
     const warm = clamp01(smileEffective * 1.05);
     const energy = clamp01(mouthOpen * 1.2 + blink * 0.6);
     const openBlend = clamp01((mouthOpen - 0.12) / 0.55);
-    const blinkBlend = clamp01((blink - 0.12) / 0.55);
+    // More sensitive eye reaction for kids: blink drives eye change sooner/stronger.
+    const blinkBlend = clamp01((blink - 0.05) / 0.32);
 
     // Continuous head shake -> hue cycle
     if (hasFace) {
