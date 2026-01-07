@@ -59,6 +59,8 @@
     (navigator.deviceMemory ? navigator.deviceMemory <= 4 : true);
   const PREFERS_REDUCED_MOTION =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const LITE_DEVICE = IS_WECHAT || IS_IPAD_PRO_1;
+  if (LITE_DEVICE) document.documentElement.classList.add("lite");
 
   const qs = new URLSearchParams(location.search);
   const forcedQuality = (qs.get("quality") || "").toLowerCase();
@@ -117,8 +119,7 @@
   function resolveInitialTier() {
     if (forcedQuality === "high" || forcedQuality === "medium" || forcedQuality === "low") return forcedQuality;
     if (PREFERS_REDUCED_MOTION) return "low";
-    if (IS_WECHAT) return "low";
-    if (IS_IPAD_PRO_1) return "low";
+    if (LITE_DEVICE) return "low";
     if (IS_IOS) return "medium";
     return "high";
   }
@@ -252,6 +253,7 @@
       facingMode: "user",
       width: { ideal: QUALITY_PRESETS[tier].video.width },
       height: { ideal: QUALITY_PRESETS[tier].video.height },
+      frameRate: LITE_DEVICE ? { ideal: 20, max: 24 } : { ideal: 30, max: 30 },
     };
 
     stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
@@ -426,7 +428,8 @@
   const roles = new Uint8Array(MAX_PARTICLES); // 0 face, 1 leftEye, 2 rightEye, 3 mouth
   const roleParamA = new Float32Array(MAX_PARTICLES); // role-specific 0..1
   const roleParamB = new Float32Array(MAX_PARTICLES); // role-specific jitter
-  const wantsColors = true;
+  // Per-particle colors are expensive on older iPads / WeChat browser.
+  let wantsColors = !LITE_DEVICE;
 
   let lastRenderAt = 0;
   let lastUpdateAt = 0;
@@ -597,6 +600,18 @@
   function applyQuality(tier) {
     qualityTier = tier;
     quality = QUALITY_PRESETS[qualityTier];
+    if (LITE_DEVICE) {
+      quality = {
+        ...quality,
+        particleCount: Math.min(quality.particleCount, 3600),
+        maxPixelRatio: 1,
+        antialias: false,
+        fog: false,
+        renderIntervalMs: Math.max(quality.renderIntervalMs || 0, 33),
+        particleUpdateIntervalMs: Math.max(quality.particleUpdateIntervalMs || 0, 33),
+        faceFrameIntervalMs: Math.max(quality.faceFrameIntervalMs || 0, 120),
+      };
+    }
     envText.textContent = `${IS_WECHAT ? "微信内置浏览器" : "系统浏览器"} · ${qualityTier.toUpperCase()}`;
     setDot(envPill.querySelector(".dot"), qualityTier === "high" ? "good" : qualityTier === "low" ? "bad" : "");
     if (renderer) {
@@ -1095,8 +1110,8 @@
   startBtn.addEventListener("click", () => startExperience({ demoOnly: false }));
   if (demoBtn) demoBtn.addEventListener("click", () => startExperience({ demoOnly: true }));
 
-  // polling status
-  setInterval(setTrackingStatus, 250);
+  // polling status (only if the HUD tracking pill exists)
+  if (trackDot && trackText) setInterval(setTrackingStatus, 250);
 
   // initial state
   updateMode();
