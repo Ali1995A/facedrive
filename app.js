@@ -497,9 +497,9 @@
     FACE_R: 12.0,
     // Tuned to resemble the Las Vegas Sphere emoji proportions:
     // eyes sit higher & wider; mouth sits lower.
-    EYE_R: 1.85,
-    EYE_Y: 3.9,
-    EYE_X: 4.9,
+    EYE_R: 1.8,
+    EYE_Y: 2.8,
+    EYE_X: 4.6,
     MOUTH_R: 6.4,
     MOUTH_Y: -3.6,
     MOUTH_START: Math.PI * 1.18,
