@@ -427,7 +427,15 @@
   const basePositions = new Float32Array(MAX_PARTICLES * 3);
   const velocities = new Float32Array(MAX_PARTICLES * 3);
   const colors = new Float32Array(MAX_PARTICLES * 3);
-  const roles = new Uint8Array(MAX_PARTICLES); // 0 face, 1 leftEye, 2 rightEye, 3 mouth
+  const ROLE = {
+    FACE: 0,
+    LEFT_EYE: 1,
+    RIGHT_EYE: 2,
+    MOUTH: 3,
+    LEFT_CHEEK: 4,
+    RIGHT_CHEEK: 5,
+  };
+  const roles = new Uint8Array(MAX_PARTICLES); // ROLE.*
   const roleParamA = new Float32Array(MAX_PARTICLES); // role-specific 0..1
   const roleParamB = new Float32Array(MAX_PARTICLES); // role-specific jitter
   // Per-particle colors are expensive on older iPads / WeChat browser.
@@ -521,18 +529,20 @@
 
       // role distribution
       const p = Math.random();
-      let role = 0;
-      if (p < 0.08) role = 1; // left eye
-      else if (p < 0.16) role = 2; // right eye
-      else if (p < 0.32) role = 3; // mouth
-      else role = 0; // face
+      let role = ROLE.FACE;
+      if (p < 0.08) role = ROLE.LEFT_EYE;
+      else if (p < 0.16) role = ROLE.RIGHT_EYE;
+      else if (p < 0.36) role = ROLE.MOUTH;
+      else if (p < 0.45) role = ROLE.LEFT_CHEEK;
+      else if (p < 0.54) role = ROLE.RIGHT_CHEEK;
+      else role = ROLE.FACE;
       roles[i] = role;
 
       let x = 0;
       let y = 0;
       let z = 0;
 
-      if (role === 0) {
+      if (role === ROLE.FACE) {
         // 3D head volume (sphere): mostly surface shell + some interior fill.
         // Slightly bias points to the front so the face reads clearly, while still looking like a ball.
         const theta = Math.random() * Math.PI * 2;
@@ -550,38 +560,44 @@
         z = dirZ * baseR;
         roleParamA[i] = Math.random();
         roleParamB[i] = Math.random();
-      } else if (role === 1) {
-        // left eye on front surface (small inset)
-        const uEye = Math.random();
-        const isOutline = Math.random() < 0.5;
-        const pt = isOutline ? sampleOnRing(EYE_R, 0.22) : sampleInCircle(EYE_R * 0.85);
-        x = pt.x - EYE_X;
-        y = pt.y + EYE_Y;
+      } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
+        // Eye particles: filled circle (cute "dot" eye). roleParamA=angleU, roleParamB=radiusU.
+        const isLeft = role === ROLE.LEFT_EYE;
+        const angleU = Math.random();
+        const radiusU = Math.random();
+        const angle = angleU * Math.PI * 2;
+        const r = Math.sqrt(radiusU) * EYE_R * 0.95;
+        x = Math.cos(angle) * r + (isLeft ? -EYE_X : EYE_X);
+        y = Math.sin(angle) * r + EYE_Y;
         ({ x, y } = clampIntoFaceXY(x, y));
-        z = faceZFromXY(x, y) - randBetween(0.55, 0.95);
-        roleParamA[i] = Math.random(); // u for line / angle
-        roleParamB[i] = randBetween(0.85, 1.15);
-      } else if (role === 2) {
-        // right eye
-        const isOutline = Math.random() < 0.5;
-        const pt = isOutline ? sampleOnRing(EYE_R, 0.22) : sampleInCircle(EYE_R * 0.85);
-        x = pt.x + EYE_X;
-        y = pt.y + EYE_Y;
+        z = faceZFromXY(x, y) - randBetween(0.55, 0.9);
+        roleParamA[i] = angleU;
+        roleParamB[i] = radiusU;
+      } else if (role === ROLE.MOUTH) {
+        // Mouth particles: closed "bean/oval" on the front surface. roleParamA=angleU, roleParamB=fillU (outline vs fill).
+        const angleU = Math.random();
+        const fillU = Math.random();
+        const angle = angleU * Math.PI * 2;
+        const outline = fillU < 0.55;
+        const rr = outline ? 1 : Math.sqrt((fillU - 0.55) / 0.45);
+        const rx = MOUTH_R * rr;
+        const ry = (MOUTH_R * 0.62) * rr;
+        x = Math.cos(angle) * rx;
+        y = Math.sin(angle) * ry + MOUTH_Y;
         ({ x, y } = clampIntoFaceXY(x, y));
-        z = faceZFromXY(x, y) - randBetween(0.55, 0.95);
+        z = faceZFromXY(x, y) - randBetween(0.65, 1.05);
+        roleParamA[i] = angleU;
+        roleParamB[i] = fillU;
+      } else if (role === ROLE.LEFT_CHEEK || role === ROLE.RIGHT_CHEEK) {
+        // Cheek blush: two small soft clusters that pop out when smiling.
+        const isLeft = role === ROLE.LEFT_CHEEK;
+        const pt = sampleInCircle(1.25);
+        x = pt.x + (isLeft ? -6.4 : 6.4);
+        y = pt.y - 0.8;
+        ({ x, y } = clampIntoFaceXY(x, y));
+        z = faceZFromXY(x, y) - randBetween(0.8, 1.4);
         roleParamA[i] = Math.random();
-        roleParamB[i] = randBetween(0.85, 1.15);
-      } else {
-        // mouth: groove on front surface
-        const u = Math.random();
-        const theta = lerp(MOUTH_START, MOUTH_END, u);
-        const r = MOUTH_R + randBetween(-0.42, 0.42);
-        x = Math.cos(theta) * r;
-        y = Math.sin(theta) * r + MOUTH_Y;
-        roleParamA[i] = u;
-        roleParamB[i] = randBetween(0.9, 1.12);
-        ({ x, y } = clampIntoFaceXY(x, y));
-        z = faceZFromXY(x, y) - randBetween(0.65, 1.15);
+        roleParamB[i] = Math.random();
       }
 
       basePositions[o] = x;
@@ -813,48 +829,70 @@
       let bz0 = basePositions[o + 2];
 
       // Shape morphing: mouth / eyes react to expression
-      if (role === 3) {
-        const arcTheta = lerp(SMILEY.MOUTH_START, SMILEY.MOUTH_END, u);
-        const arcX = Math.cos(arcTheta) * (SMILEY.MOUTH_R * jitter) * (1 + smileEffective * 0.15);
-        const arcY =
-          Math.sin(arcTheta) *
-            (SMILEY.MOUTH_R * jitter) *
-            (1 + smileEffective * 0.55) *
-            (1 - frown * 0.35) +
-          SMILEY.MOUTH_Y;
-
-        const fullTheta = u * Math.PI * 2;
-        const rx = 4.2 * jitter * (1 + smileEffective * 0.12);
-        const ry = 2.3 * jitter * (1 + openBlend * 1.05);
-        const centerY = SMILEY.MOUTH_Y - openBlend * 1.2;
-        const fullX = Math.cos(fullTheta) * rx;
-        const fullY = Math.sin(fullTheta) * ry + centerY;
-
-        bx0 = lerp(arcX, fullX, openBlend);
-        by0 = lerp(arcY, fullY, openBlend);
-        const clamped = clampIntoFaceXY(bx0, by0);
-        bx0 = clamped.x;
-        by0 = clamped.y;
-        // keep mouth as a groove on front surface; open => shallower & wider
-        bz0 = faceZFromXY(bx0, by0) - lerp(1.25, 0.55, openBlend) * jitter;
-      } else if (role === 1 || role === 2) {
-        const cx = role === 1 ? -SMILEY.EYE_X : SMILEY.EYE_X;
-        const cy = SMILEY.EYE_Y;
+      if (role === ROLE.MOUTH) {
+        // Closed "bean" mouth: outline+fill oval, with a smile warp; open => taller "ah".
         const angle = u * Math.PI * 2;
+        const fillU = roleParamB[i] ?? 0.5;
+        const outline = fillU < 0.55;
+        const rr = outline ? 1 : Math.sqrt((fillU - 0.55) / 0.45);
 
-        const circleX = Math.cos(angle) * (SMILEY.EYE_R * jitter);
-        const circleY = Math.sin(angle) * (SMILEY.EYE_R * jitter) * (1 - blinkBlend * 0.88);
+        const rx = (SMILEY.MOUTH_R * 0.95) * rr * (1 + smileEffective * 0.22);
+        const ry = (SMILEY.MOUTH_R * 0.52) * rr * (0.92 + openBlend * 0.95);
+        const centerY = SMILEY.MOUTH_Y - openBlend * 1.35 - frown * 0.25;
 
-        const lineX = (u - 0.5) * (SMILEY.EYE_R * 3.1) * jitter;
-        const lineY = 0;
+        let mx = Math.cos(angle) * rx;
+        let my = Math.sin(angle) * ry + centerY;
+        // smile warp (lift the center a bit)
+        const xn = rx > 0 ? clamp(mx / rx, -1, 1) : 0;
+        my += smileEffective * (1 - xn * xn) * 0.95;
 
-        bx0 = cx + lerp(circleX, lineX, blinkBlend);
-        by0 = cy + lerp(circleY, lineY, blinkBlend) - blinkBlend * 0.15;
+        bx0 = mx;
+        by0 = my;
         const clamped = clampIntoFaceXY(bx0, by0);
         bx0 = clamped.x;
         by0 = clamped.y;
-        // open eye => deeper inset; blink => near surface line
-        bz0 = faceZFromXY(bx0, by0) - lerp(0.95, 0.4, blinkBlend) * jitter;
+        bz0 = faceZFromXY(bx0, by0) - lerp(1.15, 0.5, openBlend) * (outline ? 1.05 : 0.95);
+      } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
+        // Cute eye: open = filled circle; blink = curved "smile" arc (not a flat line).
+        const cx = role === ROLE.LEFT_EYE ? -SMILEY.EYE_X : SMILEY.EYE_X;
+        const cy = SMILEY.EYE_Y;
+
+        const angleU = u;
+        const radiusU = roleParamB[i] ?? 0.6;
+        const angle = angleU * Math.PI * 2;
+        const r = Math.sqrt(radiusU) * (SMILEY.EYE_R * 0.98);
+        const openX = Math.cos(angle) * r;
+        const openY = Math.sin(angle) * r;
+
+        const t = (angleU - 0.5) * 2; // -1..1
+        const arcX = t * (SMILEY.EYE_R * 2.9);
+        const arcY = (1 - t * t) * (SMILEY.EYE_R * 0.42) - 0.18;
+
+        const ex = lerp(openX, arcX, blinkBlend);
+        const ey = lerp(openY, arcY, blinkBlend) - blinkBlend * 0.08;
+
+        bx0 = cx + ex;
+        by0 = cy + ey;
+        const clamped = clampIntoFaceXY(bx0, by0);
+        bx0 = clamped.x;
+        by0 = clamped.y;
+        // blink => become a shallow arc close to the surface
+        bz0 = faceZFromXY(bx0, by0) - lerp(0.9, 0.38, blinkBlend);
+      } else if (role === ROLE.LEFT_CHEEK || role === ROLE.RIGHT_CHEEK) {
+        // Cheek blush: pop out and slightly swell with smile.
+        const isLeft = role === ROLE.LEFT_CHEEK;
+        const seedA = u;
+        const seedB = roleParamB[i] ?? 0.5;
+        const ang = seedA * Math.PI * 2;
+        const rr = Math.sqrt(seedB) * (1.05 + smileEffective * 0.25);
+        bx0 = Math.cos(ang) * rr + (isLeft ? -6.4 : 6.4);
+        by0 = Math.sin(ang) * rr - 0.8;
+        const clamped = clampIntoFaceXY(bx0, by0);
+        bx0 = clamped.x;
+        by0 = clamped.y;
+        // hide when not smiling by pushing it deeper into the head
+        const cheekInset = lerp(1.45, 0.32, smileEffective);
+        bz0 = faceZFromXY(bx0, by0) - cheekInset;
       } else {
         const facePulse = 1 + smileEffective * 0.03 + mouthOpen * 0.05 - frown * 0.02;
         bx0 *= facePulse;
@@ -906,14 +944,21 @@
         let g = baseG;
         let b = baseB;
 
-        if (role === 3) {
-          r *= mouthBoost;
-          g *= mouthBoost;
-          b *= mouthBoost;
-        } else if (role === 1 || role === 2) {
+        if (role === ROLE.MOUTH) {
+          const mouthDarken = 1 - openBlend * 0.25;
+          r *= mouthBoost * mouthDarken;
+          g *= mouthBoost * mouthDarken;
+          b *= mouthBoost * mouthDarken;
+        } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
           r *= eyeDim;
           g *= eyeDim;
           b *= eyeDim;
+        } else if (role === ROLE.LEFT_CHEEK || role === ROLE.RIGHT_CHEEK) {
+          // pink-ish blush; stronger when smiling
+          const blush = 0.55 + smileEffective * 0.65;
+          r *= 1.25 * blush;
+          g *= 0.62 * blush;
+          b *= 0.78 * blush;
         }
 
         r = clamp01(r * sparkle);
