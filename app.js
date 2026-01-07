@@ -1032,6 +1032,28 @@
       const targetPitch = clamp(pitch, -1, 1) * -0.65; // ~37° (negative feels like nod-down)
       headGroup.rotation.y = lerp(headGroup.rotation.y, targetYaw, clamp01(dt * 6));
       headGroup.rotation.x = lerp(headGroup.rotation.x, targetPitch, clamp01(dt * 6));
+
+      // Distance interaction: closer to camera => larger head/particles; farther => smaller.
+      const faceScale = hasFace ? faceSmooth.faceScale : 1.0; // calibrated eye distance ratio
+      const t = clamp01((faceScale - 0.85) / 0.75);
+      const minS = LITE_DEVICE ? 0.9 : 0.85;
+      const maxS = LITE_DEVICE ? 1.22 : 1.4;
+      const targetS = lerp(minS, maxS, t);
+      const sNow = headGroup.scale.x || 1;
+      const nextS = lerp(sNow, targetS, clamp01(dt * 5.5));
+      headGroup.scale.set(nextS, nextS, nextS);
+
+      // Subtle depth shift so it feels like moving in/out (kept small to avoid clipping).
+      const targetZ = lerp(0.8, -0.6, t);
+      headGroup.position.z = lerp(headGroup.position.z, targetZ, clamp01(dt * 4));
+
+      if (material) {
+        const baseSize = 0.14;
+        const sizeMin = LITE_DEVICE ? 0.95 : 0.9;
+        const sizeMax = LITE_DEVICE ? 1.18 : 1.28;
+        const targetSize = baseSize * lerp(sizeMin, sizeMax, t);
+        material.size = lerp(material.size || baseSize, targetSize, clamp01(dt * 5));
+      }
     }
 
     renderer.render(scene, camera);
