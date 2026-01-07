@@ -514,10 +514,10 @@
     // eyes sit higher & wider; mouth sits lower.
     EYE_R: 1.9,
     // Move features down ~70% (relative to previous anchors)
-    EYE_Y: 0.6,
+    EYE_Y: -0.1,
     EYE_X: 4.1,
     MOUTH_R: 6.4,
-    MOUTH_Y: -5.1,
+    MOUTH_Y: -6.15,
     MOUTH_START: Math.PI * 1.18,
     MOUTH_END: Math.PI * 1.82,
   };
