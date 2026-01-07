@@ -495,11 +495,13 @@
 
   const SMILEY = {
     FACE_R: 12.0,
-    EYE_R: 1.7,
-    EYE_Y: 3.0,
-    EYE_X: 4.2,
-    MOUTH_R: 6.2,
-    MOUTH_Y: -2.4,
+    // Tuned to resemble the Las Vegas Sphere emoji proportions:
+    // eyes sit higher & wider; mouth sits lower.
+    EYE_R: 1.85,
+    EYE_Y: 3.9,
+    EYE_X: 4.9,
+    MOUTH_R: 6.4,
+    MOUTH_Y: -3.6,
     MOUTH_START: Math.PI * 1.18,
     MOUTH_END: Math.PI * 1.82,
   };
@@ -574,20 +576,17 @@
         roleParamA[i] = angleU;
         roleParamB[i] = radiusU;
       } else if (role === ROLE.MOUTH) {
-        // Mouth particles: closed "bean/oval" on the front surface. roleParamA=angleU, roleParamB=fillU (outline vs fill).
-        const angleU = Math.random();
-        const fillU = Math.random();
-        const angle = angleU * Math.PI * 2;
-        const outline = fillU < 0.55;
-        const rr = outline ? 1 : Math.sqrt((fillU - 0.55) / 0.45);
-        const rx = (MOUTH_R * 0.74) * rr;
-        const ry = (MOUTH_R * 0.38) * rr;
-        x = Math.cos(angle) * rx;
-        y = Math.sin(angle) * ry + MOUTH_Y;
+        // Mouth particles: thick smile arc (Sphere-style), opens into an oval when mouthOpen increases.
+        // roleParamA=u (0..1 along arc), roleParamB=thickness/offset seed
+        const uArc = Math.random();
+        const tSeed = Math.random();
+        const pt = sampleArc(MOUTH_R, MOUTH_START, MOUTH_END, 0.42 + tSeed * 0.18);
+        x = pt.x;
+        y = pt.y + MOUTH_Y;
         ({ x, y } = clampIntoFaceXY(x, y));
         z = faceZFromXY(x, y) - randBetween(0.65, 1.05);
-        roleParamA[i] = angleU;
-        roleParamB[i] = fillU;
+        roleParamA[i] = uArc;
+        roleParamB[i] = tSeed;
       } else if (role === ROLE.LEFT_CHEEK || role === ROLE.RIGHT_CHEEK) {
         // Cheek blush: two small soft clusters that pop out when smiling.
         const isLeft = role === ROLE.LEFT_CHEEK;
@@ -831,28 +830,33 @@
 
       // Shape morphing: mouth / eyes react to expression
       if (role === ROLE.MOUTH) {
-        // Closed "bean" mouth: outline+fill oval, with a smile warp; open => taller "ah".
-        const angle = u * Math.PI * 2;
-        const fillU = roleParamB[i] ?? 0.5;
-        const outline = fillU < 0.55;
-        const rr = outline ? 1 : Math.sqrt((fillU - 0.55) / 0.45);
+        // Sphere-style mouth: thick smile arc; when mouth opens, morph into an "O/ah" oval.
+        const uArc = u;
+        const tSeed = roleParamB[i] ?? 0.5;
+        const theta = lerp(SMILEY.MOUTH_START, SMILEY.MOUTH_END, uArc);
+        const thickness = (tSeed - 0.5) * 0.9;
 
-        const rx = (SMILEY.MOUTH_R * 0.74) * rr * (1 + smileEffective * 0.22);
-        const ry = (SMILEY.MOUTH_R * 0.38) * rr * (0.92 + openBlend * 1.05);
-        const centerY = SMILEY.MOUTH_Y - openBlend * 1.35 - frown * 0.25;
+        const arcR = SMILEY.MOUTH_R * (0.96 + smileEffective * 0.1) + thickness;
+        const arcX = Math.cos(theta) * arcR;
+        const arcY =
+          Math.sin(theta) *
+            (SMILEY.MOUTH_R * (0.88 + smileEffective * 0.22) * (1 - frown * 0.25)) +
+          SMILEY.MOUTH_Y +
+          thickness * 0.18;
 
-        let mx = Math.cos(angle) * rx;
-        let my = Math.sin(angle) * ry + centerY;
-        // smile warp (lift the center a bit)
-        const xn = rx > 0 ? clamp(mx / rx, -1, 1) : 0;
-        my += smileEffective * (1 - xn * xn) * 0.95;
+        const ovalTheta = uArc * Math.PI * 2;
+        const rx = SMILEY.MOUTH_R * 0.62 * (1 + smileEffective * 0.08);
+        const ry = SMILEY.MOUTH_R * 0.26 * (1 + openBlend * 2.0);
+        const centerY = SMILEY.MOUTH_Y - openBlend * 1.15 - frown * 0.25;
+        const ovalX = Math.cos(ovalTheta) * (rx + thickness * 0.15);
+        const ovalY = Math.sin(ovalTheta) * (ry + thickness * 0.1) + centerY;
 
-        bx0 = mx;
-        by0 = my;
+        bx0 = lerp(arcX, ovalX, openBlend);
+        by0 = lerp(arcY, ovalY, openBlend);
         const clamped = clampIntoFaceXY(bx0, by0);
         bx0 = clamped.x;
         by0 = clamped.y;
-        bz0 = faceZFromXY(bx0, by0) - lerp(1.25, 0.55, openBlend) * (outline ? 1.08 : 0.98);
+        bz0 = faceZFromXY(bx0, by0) - lerp(1.05, 0.45, openBlend);
       } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
         // Cute eye: open = filled circle; blink = curved "smile" arc (not a flat line).
         const cx = role === ROLE.LEFT_EYE ? -SMILEY.EYE_X : SMILEY.EYE_X;
@@ -887,7 +891,7 @@
         const ang = seedA * Math.PI * 2;
         const rr = Math.sqrt(seedB) * (1.05 + smileEffective * 0.25);
         bx0 = Math.cos(ang) * rr + (isLeft ? -6.4 : 6.4);
-        by0 = Math.sin(ang) * rr - 0.8;
+        by0 = Math.sin(ang) * rr - 2.2;
         const clamped = clampIntoFaceXY(bx0, by0);
         bx0 = clamped.x;
         by0 = clamped.y;
@@ -946,7 +950,7 @@
         let b = baseB;
 
         if (role === ROLE.MOUTH) {
-          const mouthDarken = 1 - openBlend * 0.25;
+          const mouthDarken = 1 - openBlend * 0.28;
           r *= mouthBoost * mouthDarken;
           g *= mouthBoost * mouthDarken;
           b *= mouthBoost * mouthDarken;
