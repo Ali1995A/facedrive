@@ -61,6 +61,7 @@
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const LITE_DEVICE = IS_WECHAT || IS_IPAD_PRO_1;
   if (LITE_DEVICE) document.documentElement.classList.add("lite");
+  const MIRROR_MODE = true;
 
   const qs = new URLSearchParams(location.search);
   const forcedQuality = (qs.get("quality") || "").toLowerCase();
@@ -416,6 +417,7 @@
   let scene = null;
   let camera = null;
   let points = null;
+  let headGroup = null;
   let geometry = null;
   let material = null;
   let fog = null;
@@ -663,8 +665,13 @@
     });
 
     points = new THREE.Points(geometry, material);
-    scene.add(points);
-    points.rotation.set(0, 0, 0);
+    headGroup = new THREE.Group();
+    headGroup.rotation.order = "YXZ";
+    headGroup.add(points);
+    // Rotate around the "neck" so it behaves like a mirror head swing.
+    points.position.set(0, SMILEY.FACE_R * 0.65, 0);
+    headGroup.position.set(0, -points.position.y, 0);
+    scene.add(headGroup);
 
     applyQuality(getSelectedTier());
     onResize();
@@ -724,10 +731,11 @@
     const sens = sensitivity;
     const hasFace = faceState.hasFace && faceTrackingEnabled;
 
-    // Keep the smiley/head always facing the screen: ignore yaw/pitch (no tilt/rotation).
-    const yaw = 0;
-    const pitch = 0;
-    const fx = hasFace ? faceSmooth.faceX : 0;
+    // Mirror-mode mapping: left-right on screen matches the user's "mirror" intuition.
+    const mirrorSign = MIRROR_MODE ? -1 : 1;
+    const yaw = (hasFace ? faceSmooth.yaw : 0) * mirrorSign;
+    const pitch = hasFace ? faceSmooth.pitch : 0;
+    const fx = (hasFace ? faceSmooth.faceX : 0) * mirrorSign;
     const fy = hasFace ? faceSmooth.faceY : 0;
     const scale = hasFace ? faceSmooth.faceScale : 1.0;
     const smile = hasFace ? faceSmooth.smile : 0.2;
@@ -853,7 +861,7 @@
         by0 *= facePulse;
       }
 
-      // keep smiley facing camera: no global rotation/tilt
+      // local-space targets (head rotation is applied at group level)
       let bx = bx0;
       let by = by0;
       let bz = bz0;
@@ -940,8 +948,19 @@
       updateParticles(dt, now);
     }
 
-    // keep smiley always facing screen (no global rotation)
-    points.rotation.set(0, 0, 0);
+    // Head pose: shake/nod/swing around the "neck" pivot.
+    if (headGroup) {
+      const hasFace = faceState.hasFace && faceTrackingEnabled;
+      const mirrorSign = MIRROR_MODE ? -1 : 1;
+      const yaw = (hasFace ? faceSmooth.yaw : 0) * mirrorSign;
+      const pitch = hasFace ? faceSmooth.pitch : 0;
+
+      // Convert normalized yaw/pitch (-1..1) into radians.
+      const targetYaw = clamp(yaw, -1, 1) * 0.85; // ~49°
+      const targetPitch = clamp(pitch, -1, 1) * -0.65; // ~37° (negative feels like nod-down)
+      headGroup.rotation.y = lerp(headGroup.rotation.y, targetYaw, clamp01(dt * 6));
+      headGroup.rotation.x = lerp(headGroup.rotation.x, targetPitch, clamp01(dt * 6));
+    }
 
     renderer.render(scene, camera);
   }
