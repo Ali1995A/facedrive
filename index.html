@@ -215,17 +215,7 @@
       }
 
       #hud {
-        position: fixed;
-        left: 14px;
-        bottom: 14px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        z-index: 5;
-        pointer-events: none;
-      }
-      #hud .pill {
-        pointer-events: none;
+        display: none;
       }
       #panel {
         position: fixed;
@@ -350,10 +340,6 @@
             - iPad Pro 1 代/低端机若卡顿：在面板里切换到 Low
           </div>
         </div>
-      </div>
-
-      <div id="hud">
-        <div class="pill"><span style="color: rgba(255, 255, 255, 0.7)">提示：</span><span>点击画面切换面板</span></div>
       </div>
 
       <div id="panel" class="hidden">

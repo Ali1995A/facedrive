@@ -20,7 +20,7 @@
       maxPixelRatio: 1.5,
       antialias: false,
       fog: true,
-      depthTest: true,
+      depthTest: false,
       renderIntervalMs: 16,
       particleUpdateIntervalMs: 16,
       faceFrameIntervalMs: 66,
@@ -32,7 +32,7 @@
       maxPixelRatio: 1,
       antialias: false,
       fog: false,
-      depthTest: true,
+      depthTest: false,
       renderIntervalMs: 33,
       particleUpdateIntervalMs: 33,
       faceFrameIntervalMs: 100,
@@ -532,9 +532,9 @@
       let role = ROLE.FACE;
       if (p < 0.08) role = ROLE.LEFT_EYE;
       else if (p < 0.16) role = ROLE.RIGHT_EYE;
-      else if (p < 0.36) role = ROLE.MOUTH;
-      else if (p < 0.45) role = ROLE.LEFT_CHEEK;
-      else if (p < 0.54) role = ROLE.RIGHT_CHEEK;
+      else if (p < 0.34) role = ROLE.MOUTH;
+      else if (p < 0.38) role = ROLE.LEFT_CHEEK;
+      else if (p < 0.42) role = ROLE.RIGHT_CHEEK;
       else role = ROLE.FACE;
       roles[i] = role;
 
@@ -553,8 +553,8 @@
         let dirZ = zDir0;
         if (Math.random() < 0.58) dirZ = Math.abs(dirZ);
 
-        const surface = Math.random() < 0.8;
-        const baseR = surface ? FACE_R + randBetween(-0.25, 0.25) : FACE_R * Math.cbrt(Math.random()) * 0.95;
+        const surface = Math.random() < 0.55;
+        const baseR = surface ? FACE_R + randBetween(-0.2, 0.2) : FACE_R * Math.cbrt(Math.random()) * 0.98;
         x = dirX * baseR;
         y = dirY * baseR;
         z = dirZ * baseR;
@@ -580,8 +580,8 @@
         const angle = angleU * Math.PI * 2;
         const outline = fillU < 0.55;
         const rr = outline ? 1 : Math.sqrt((fillU - 0.55) / 0.45);
-        const rx = MOUTH_R * rr;
-        const ry = (MOUTH_R * 0.62) * rr;
+        const rx = (MOUTH_R * 0.74) * rr;
+        const ry = (MOUTH_R * 0.38) * rr;
         x = Math.cos(angle) * rx;
         y = Math.sin(angle) * ry + MOUTH_Y;
         ({ x, y } = clampIntoFaceXY(x, y));
@@ -593,7 +593,7 @@
         const isLeft = role === ROLE.LEFT_CHEEK;
         const pt = sampleInCircle(1.25);
         x = pt.x + (isLeft ? -6.4 : 6.4);
-        y = pt.y - 0.8;
+        y = pt.y - 1.9;
         ({ x, y } = clampIntoFaceXY(x, y));
         z = faceZFromXY(x, y) - randBetween(0.8, 1.4);
         roleParamA[i] = Math.random();
@@ -625,6 +625,7 @@
         maxPixelRatio: 1,
         antialias: false,
         fog: false,
+        depthTest: false,
         renderIntervalMs: Math.max(quality.renderIntervalMs || 0, 33),
         particleUpdateIntervalMs: Math.max(quality.particleUpdateIntervalMs || 0, 33),
         faceFrameIntervalMs: Math.max(quality.faceFrameIntervalMs || 0, 120),
@@ -836,8 +837,8 @@
         const outline = fillU < 0.55;
         const rr = outline ? 1 : Math.sqrt((fillU - 0.55) / 0.45);
 
-        const rx = (SMILEY.MOUTH_R * 0.95) * rr * (1 + smileEffective * 0.22);
-        const ry = (SMILEY.MOUTH_R * 0.52) * rr * (0.92 + openBlend * 0.95);
+        const rx = (SMILEY.MOUTH_R * 0.74) * rr * (1 + smileEffective * 0.22);
+        const ry = (SMILEY.MOUTH_R * 0.38) * rr * (0.92 + openBlend * 1.05);
         const centerY = SMILEY.MOUTH_Y - openBlend * 1.35 - frown * 0.25;
 
         let mx = Math.cos(angle) * rx;
@@ -851,7 +852,7 @@
         const clamped = clampIntoFaceXY(bx0, by0);
         bx0 = clamped.x;
         by0 = clamped.y;
-        bz0 = faceZFromXY(bx0, by0) - lerp(1.15, 0.5, openBlend) * (outline ? 1.05 : 0.95);
+        bz0 = faceZFromXY(bx0, by0) - lerp(1.25, 0.55, openBlend) * (outline ? 1.08 : 0.98);
       } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
         // Cute eye: open = filled circle; blink = curved "smile" arc (not a flat line).
         const cx = role === ROLE.LEFT_EYE ? -SMILEY.EYE_X : SMILEY.EYE_X;
@@ -955,7 +956,7 @@
           b *= eyeDim;
         } else if (role === ROLE.LEFT_CHEEK || role === ROLE.RIGHT_CHEEK) {
           // pink-ish blush; stronger when smiling
-          const blush = 0.55 + smileEffective * 0.65;
+          const blush = 0.25 + smileEffective * 0.75;
           r *= 1.25 * blush;
           g *= 0.62 * blush;
           b *= 0.78 * blush;
