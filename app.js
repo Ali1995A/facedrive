@@ -451,8 +451,10 @@
   const roles = new Uint8Array(MAX_PARTICLES); // ROLE.*
   const roleParamA = new Float32Array(MAX_PARTICLES); // role-specific 0..1
   const roleParamB = new Float32Array(MAX_PARTICLES); // role-specific jitter
-  // Per-particle colors are expensive on older iPads / WeChat browser.
-  let wantsColors = !LITE_DEVICE;
+  const roleParamC = new Float32Array(MAX_PARTICLES); // role-specific 0..1 (extra)
+  // Per-particle colors define the "Sphere glow" look; keep enabled and throttle on lite devices.
+  let wantsColors = true;
+  let colorUpdateFlip = 0;
 
   let lastRenderAt = 0;
   let lastUpdateAt = 0;
@@ -511,8 +513,8 @@
     // Tuned to resemble the Las Vegas Sphere emoji proportions:
     // eyes sit higher & wider; mouth sits lower.
     EYE_R: 1.9,
-    EYE_Y: 2.1,
-    EYE_X: 4.35,
+    EYE_Y: 2.0,
+    EYE_X: 4.1,
     MOUTH_R: 6.4,
     MOUTH_Y: -3.0,
     MOUTH_START: Math.PI * 1.18,
@@ -588,17 +590,21 @@
         roleParamB[i] = radiusU;
       } else if (role === ROLE.MOUTH) {
         // Mouth particles: thick smile band. Stored as u along arc + thickness seed.
-        const uArc = Math.random();
-        const tSeed = Math.random();
-        const theta = lerp(MOUTH_START, MOUTH_END, uArc);
-        const thickness = (tSeed - 0.5) * 0.9;
+        // roleParamA: x/u (0..1), roleParamB: fill (0..1), roleParamC: seed (0..1)
+        const u = Math.random();
+        const v = Math.random();
+        const seed = Math.random();
+        // seed a reasonable initial "smile band" placement (final shape computed in update loop)
+        const theta = lerp(MOUTH_START, MOUTH_END, u);
+        const thickness = (seed - 0.5) * 0.65;
         const r = MOUTH_R + thickness;
         x = Math.cos(theta) * r;
-        y = Math.sin(theta) * r + MOUTH_Y + thickness * 0.18;
+        y = Math.sin(theta) * r + MOUTH_Y + thickness * 0.12;
         ({ x, y } = clampIntoFaceXY(x, y));
         z = faceZFromXY(x, y) - randBetween(0.65, 1.05);
-        roleParamA[i] = uArc;
-        roleParamB[i] = tSeed;
+        roleParamA[i] = u;
+        roleParamB[i] = v;
+        roleParamC[i] = seed;
       }
 
       basePositions[o] = x;
@@ -622,13 +628,13 @@
     if (LITE_DEVICE) {
       quality = {
         ...quality,
-        particleCount: Math.min(quality.particleCount, 3600),
+        particleCount: Math.min(quality.particleCount, 3000),
         maxPixelRatio: 1,
         antialias: false,
         fog: false,
         depthTest: false,
-        renderIntervalMs: Math.max(quality.renderIntervalMs || 0, 33),
-        particleUpdateIntervalMs: Math.max(quality.particleUpdateIntervalMs || 0, 33),
+        renderIntervalMs: Math.max(quality.renderIntervalMs || 0, 40),
+        particleUpdateIntervalMs: Math.max(quality.particleUpdateIntervalMs || 0, 40),
         // WeChat/iPad Pro 1 can "stall" FaceMesh; keep requests reasonably frequent.
         faceFrameIntervalMs: Math.max(quality.faceFrameIntervalMs || 0, 80),
       };
@@ -811,10 +817,13 @@
     const drift = m.drift + energy * 0.2;
     const cohesion = m.cohesion + pull * 0.25 + frown * 0.18;
 
+    // Throttle expensive color updates on iPad Pro 1 / WeChat.
+    const doColors = wantsColors && (!LITE_DEVICE || (colorUpdateFlip = colorUpdateFlip ^ 1) === 1);
+
     // Sphere-style glow palette (gold <-> cyan) with faux lighting.
     const GOLD_H = 0.12; // ~yellow
     const CYAN_H = 0.53; // ~cyan
-    const lightDir = { x: 0.55, y: 0.35, z: 1.0 };
+    const lightDir = { x: 0.58, y: 0.32, z: 1.0 };
     const lightLen = Math.hypot(lightDir.x, lightDir.y, lightDir.z) || 1;
     lightDir.x /= lightLen;
     lightDir.y /= lightLen;
@@ -831,34 +840,41 @@
 
       // Shape morphing: mouth / eyes react to expression
       if (role === ROLE.MOUTH) {
-        // Sphere-style mouth: thick smile arc; when mouth opens, morph into an "O/ah" oval.
-        const uArc = u;
-        const tSeed = roleParamB[i] ?? 0.5;
-        const theta = lerp(SMILEY.MOUTH_START, SMILEY.MOUTH_END, uArc);
-        const thickness = (tSeed - 0.5) * 0.9;
+        // Mouth is ALWAYS a closed shape:
+        // - default/smile/frown: a closed "crescent band" (lens-like) that meets at the corners
+        // - open mouth: a closed filled oval ("O/ah")
+        const uX = u; // 0..1
+        const vFill = roleParamB[i] ?? 0.5; // 0..1
+        const seed = roleParamC[i] ?? 0.5; // 0..1
 
-        const arcR = SMILEY.MOUTH_R * (0.96 + smileEffective * 0.1) + thickness;
-        const arcX = Math.cos(theta) * arcR;
-        const arcY =
-          Math.sin(theta) *
-            (SMILEY.MOUTH_R * (0.88 + smileEffective * 0.22) * (1 - frown * 0.25)) +
-          SMILEY.MOUTH_Y +
-          thickness * 0.18;
+        const xN = (uX - 0.5) * 2; // -1..1
+        const curve = Math.pow(Math.max(0, 1 - xN * xN), 0.72);
+        const mood = clamp(smileEffective - frown * 1.1, -1, 1); // >0 smile, <0 sad
 
-        // Closed shape for open mouth: full oval.
-        const ovalTheta = uArc * Math.PI * 2;
-        const rx = SMILEY.MOUTH_R * 0.62 * (1 + smileEffective * 0.08);
-        const ry = SMILEY.MOUTH_R * 0.26 * (1 + openBlend * 2.0);
-        const centerY = SMILEY.MOUTH_Y - openBlend * 1.15 - frown * 0.25;
-        const ovalX = Math.cos(ovalTheta) * (rx + thickness * 0.15);
-        const ovalY = Math.sin(ovalTheta) * (ry + thickness * 0.1) + centerY;
+        const rxSmile = SMILEY.MOUTH_R * (0.78 + Math.max(0, mood) * 0.06 - Math.max(0, -mood) * 0.08);
+        const amp = (0.95 + Math.abs(mood) * 0.55) * (mood >= 0 ? 1 : -1);
+        const bottom = curve * amp;
+        const thickness = (0.35 + seed * 0.35) * curve * (1 - openBlend * 0.45);
+        const top = bottom - thickness;
 
-        bx0 = lerp(arcX, ovalX, openBlend);
-        by0 = lerp(arcY, ovalY, openBlend);
+        const centerY = SMILEY.MOUTH_Y - openBlend * 1.05 - frown * 0.3;
+        const smileX = xN * rxSmile;
+        const smileY = lerp(top, bottom, vFill) + centerY;
+
+        // Open mouth (filled oval), closed shape
+        const ang = uX * Math.PI * 2;
+        const rr = Math.sqrt(clamp01(vFill));
+        const rxO = SMILEY.MOUTH_R * (0.52 + Math.max(0, mood) * 0.06);
+        const ryO = SMILEY.MOUTH_R * (0.2 + openBlend * 0.62);
+        const openX = Math.cos(ang) * rxO * rr;
+        const openY = Math.sin(ang) * ryO * rr + (SMILEY.MOUTH_Y - openBlend * 1.2 - frown * 0.25);
+
+        bx0 = lerp(smileX, openX, openBlend);
+        by0 = lerp(smileY, openY, openBlend);
         const clamped = clampIntoFaceXY(bx0, by0);
         bx0 = clamped.x;
         by0 = clamped.y;
-        bz0 = faceZFromXY(bx0, by0) - lerp(1.05, 0.45, openBlend);
+        bz0 = faceZFromXY(bx0, by0) - lerp(1.05, 0.42, openBlend);
       } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
         // Sphere-style eye: open = closed ring (with some fill); blink = very flat closed oval (not an open curve).
         const cx = role === ROLE.LEFT_EYE ? -SMILEY.EYE_X : SMILEY.EYE_X;
@@ -867,10 +883,11 @@
         const angleU = u;
         const radiusU = roleParamB[i] ?? 0.6;
         const angle = angleU * Math.PI * 2;
-        const ringT = 0.72 + radiusU * 0.28; // bias towards outer ring
-        const r = ringT * (SMILEY.EYE_R * 0.98);
-        const openX = Math.cos(angle) * r;
-        const openY = Math.sin(angle) * r;
+        const ringOuter = SMILEY.EYE_R * (0.98 + (1 - openBlend) * 0.08);
+        const ringInner = SMILEY.EYE_R * (0.55 + openBlend * 0.1);
+        const ringR = lerp(ringInner, ringOuter, Math.sqrt(clamp01(radiusU)));
+        const openX = Math.cos(angle) * ringR;
+        const openY = Math.sin(angle) * ringR;
 
         const blinkRx = SMILEY.EYE_R * 1.55;
         const blinkRy = SMILEY.EYE_R * 0.18;
@@ -929,7 +946,7 @@
       pos[o + 1] = py + velocities[o + 1];
       pos[o + 2] = pz + velocities[o + 2];
 
-      if (wantsColors) {
+      if (doColors) {
         const c = i * 3;
         const sparkle = (0.78 + m.sparkle * 0.22) * (0.72 + energy * 0.55) * (0.9 + (u - 0.5) * 0.14);
         const mouthBoost = 1 + openBlend * 0.22 + warm * 0.16 + energy * 0.18;
@@ -943,14 +960,14 @@
         const nZ = nz / nlen;
 
         const ndl = clamp01(nX * lightDir.x + nY * lightDir.y + nZ * lightDir.z);
-        const rim = Math.pow(1 - clamp01(nZ), 2.4);
-        const glow = clamp01(0.25 + ndl * 0.95 + rim * 0.75);
+        const rim = Math.pow(1 - clamp01(nZ), 2.2);
+        const glow = clamp01(0.22 + ndl * 1.02 + rim * 0.85);
 
         // bias hue by side: right side tends to cyan in the reference image
         const side = clamp01(0.5 + nX * 0.65);
         const hue = (GOLD_H + (CYAN_H - GOLD_H) * side + hueOffset) % 1;
-        const sat = clamp01(0.82 + 0.12 * ndl);
-        const lit = clamp01(0.48 + 0.22 * glow);
+        const sat = clamp01(0.86 + 0.1 * ndl);
+        const lit = clamp01(0.44 + 0.28 * glow);
         tmpColor.setHSL((hue + 1) % 1, sat, lit);
         let r = tmpColor.r;
         let g = tmpColor.g;
@@ -980,7 +997,7 @@
     }
 
     geometry.attributes.position.needsUpdate = true;
-    if (wantsColors) geometry.attributes.color.needsUpdate = true;
+    if (doColors) geometry.attributes.color.needsUpdate = true;
   }
 
   function animate(now) {
