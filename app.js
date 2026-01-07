@@ -1035,22 +1035,24 @@
 
       // Distance interaction: closer to camera => larger head/particles; farther => smaller.
       const faceScale = hasFace ? faceSmooth.faceScale : 1.0; // calibrated eye distance ratio
-      const t = clamp01((faceScale - 0.85) / 0.75);
-      const minS = LITE_DEVICE ? 0.9 : 0.85;
-      const maxS = LITE_DEVICE ? 1.22 : 1.4;
+      // Amplify response so small distance changes are visible (kids move subtly).
+      const t0 = clamp01((faceScale - 0.78) / 0.55);
+      const t = Math.pow(t0, 0.65); // ease-out: more sensitive near the middle
+      const minS = LITE_DEVICE ? 0.82 : 0.72;
+      const maxS = LITE_DEVICE ? 1.48 : 1.82;
       const targetS = lerp(minS, maxS, t);
       const sNow = headGroup.scale.x || 1;
       const nextS = lerp(sNow, targetS, clamp01(dt * 5.5));
       headGroup.scale.set(nextS, nextS, nextS);
 
       // Subtle depth shift so it feels like moving in/out (kept small to avoid clipping).
-      const targetZ = lerp(0.8, -0.6, t);
+      const targetZ = lerp(1.4, -1.2, t);
       headGroup.position.z = lerp(headGroup.position.z, targetZ, clamp01(dt * 4));
 
       if (material) {
         const baseSize = 0.14;
-        const sizeMin = LITE_DEVICE ? 0.95 : 0.9;
-        const sizeMax = LITE_DEVICE ? 1.18 : 1.28;
+        const sizeMin = LITE_DEVICE ? 0.86 : 0.78;
+        const sizeMax = LITE_DEVICE ? 1.55 : 1.75;
         const targetSize = baseSize * lerp(sizeMin, sizeMax, t);
         material.size = lerp(material.size || baseSize, targetSize, clamp01(dt * 5));
       }
