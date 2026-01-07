@@ -64,6 +64,7 @@
         box-shadow: 0 8px 30px var(--shadow);
         opacity: 0;
         pointer-events: none;
+        display: none;
       }
       #overlay {
         position: fixed;
@@ -116,6 +117,10 @@
         cursor: pointer;
         transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
       }
+      .btn:focus-visible {
+        outline: 3px solid rgba(255, 255, 255, 0.78);
+        outline-offset: 2px;
+      }
       .btn:hover {
         background: rgba(255, 255, 255, 0.1);
       }
@@ -123,15 +128,28 @@
         transform: translateY(1px);
       }
       .btn.primary {
-        background: linear-gradient(135deg, rgba(124, 92, 255, 0.78), rgba(46, 229, 157, 0.44));
-        border-color: rgba(255, 255, 255, 0.26);
+        background: linear-gradient(135deg, #ff3d7f, #ffb000);
+        border-color: rgba(255, 255, 255, 0.34);
+        box-shadow: 0 14px 34px rgba(255, 156, 0, 0.24), 0 10px 26px rgba(255, 61, 127, 0.18);
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.16);
       }
       .btn.primary:hover {
-        background: linear-gradient(135deg, rgba(124, 92, 255, 0.9), rgba(46, 229, 157, 0.52));
+        background: linear-gradient(135deg, #ff2f74, #ffc233);
       }
       .btn.danger {
         border-color: rgba(255, 77, 109, 0.5);
         background: rgba(255, 77, 109, 0.08);
+      }
+      .cta-row {
+        justify-content: center;
+      }
+      #startBtn {
+        width: 100%;
+        max-width: 320px;
+        font-size: 18px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        letter-spacing: 0.6px;
       }
       .hint {
         margin-top: 12px;
@@ -302,10 +320,8 @@
               >隐私说明：视频仅在本地用于互动处理，不会上传或存储。</span
             >
           </p>
-          <div class="row">
-            <button class="btn primary" id="startBtn">开始体验</button>
-            <button class="btn" id="demoBtn">仅演示模式</button>
-            <button class="btn danger" id="helpBtn">打不开？</button>
+          <div class="row cta-row">
+            <button class="btn primary" id="startBtn">开始玩</button>
           </div>
 
           <div id="calibration" class="hidden">
@@ -326,7 +342,6 @@
       </div>
 
       <div id="hud">
-        <div class="pill"><span class="dot" id="trackDot"></span><span id="trackText">未启动</span></div>
         <div class="pill"><span style="color: rgba(255, 255, 255, 0.7)">提示：</span><span>点击画面切换面板</span></div>
       </div>
 
@@ -365,7 +380,6 @@
         </div>
         <div class="panel-row">
           <button class="btn" id="fullscreenBtn">全屏</button>
-          <button class="btn" id="togglePreviewBtn">预览</button>
         </div>
       </div>
 

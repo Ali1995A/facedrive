@@ -20,7 +20,7 @@
       maxPixelRatio: 1.5,
       antialias: false,
       fog: true,
-      depthTest: false,
+      depthTest: true,
       renderIntervalMs: 16,
       particleUpdateIntervalMs: 16,
       faceFrameIntervalMs: 66,
@@ -32,7 +32,7 @@
       maxPixelRatio: 1,
       antialias: false,
       fog: false,
-      depthTest: false,
+      depthTest: true,
       renderIntervalMs: 33,
       particleUpdateIntervalMs: 33,
       faceFrameIntervalMs: 100,
@@ -108,6 +108,7 @@
   }
 
   function setDot(dotEl, state) {
+    if (!dotEl) return;
     dotEl.classList.remove("good", "bad");
     if (state === "good") dotEl.classList.add("good");
     if (state === "bad") dotEl.classList.add("bad");
@@ -490,6 +491,21 @@
     MOUTH_END: Math.PI * 1.82,
   };
 
+  function clampIntoFaceXY(x, y) {
+    const r = SMILEY.FACE_R * 0.96;
+    const d = Math.hypot(x, y);
+    if (d <= r || d === 0) return { x, y };
+    const s = r / d;
+    return { x: x * s, y: y * s };
+  }
+
+  function faceZFromXY(x, y) {
+    const r2 = SMILEY.FACE_R * SMILEY.FACE_R;
+    const d2 = x * x + y * y;
+    const z2 = Math.max(0, r2 - d2);
+    return Math.sqrt(z2); // front hemisphere (+z)
+  }
+
   function generateSmiley() {
     // Smiley in XY plane with slight Z thickness.
     // Coordinate system: face centered at (0,0), radius ~ 12.
@@ -501,40 +517,57 @@
       // role distribution
       const p = Math.random();
       let role = 0;
-      if (p < 0.16) role = 1; // left eye
-      else if (p < 0.32) role = 2; // right eye
-      else if (p < 0.55) role = 3; // mouth
+      if (p < 0.08) role = 1; // left eye
+      else if (p < 0.16) role = 2; // right eye
+      else if (p < 0.32) role = 3; // mouth
       else role = 0; // face
       roles[i] = role;
 
       let x = 0;
       let y = 0;
+      let z = 0;
 
       if (role === 0) {
-        // face outline + fill for volume
-        const isOutline = Math.random() < 0.55;
-        const pt = isOutline ? sampleOnRing(FACE_R, 0.55) : sampleInCircle(FACE_R * 0.93);
-        x = pt.x;
-        y = pt.y;
+        // 3D head volume (sphere): mostly surface shell + some interior fill.
+        // Slightly bias points to the front so the face reads clearly, while still looking like a ball.
+        const theta = Math.random() * Math.PI * 2;
+        const zDir0 = Math.random() * 2 - 1; // -1..1
+        const rxy = Math.sqrt(Math.max(0, 1 - zDir0 * zDir0));
+        let dirX = rxy * Math.cos(theta);
+        let dirY = rxy * Math.sin(theta);
+        let dirZ = zDir0;
+        if (Math.random() < 0.58) dirZ = Math.abs(dirZ);
+
+        const surface = Math.random() < 0.8;
+        const baseR = surface ? FACE_R + randBetween(-0.25, 0.25) : FACE_R * Math.cbrt(Math.random()) * 0.95;
+        x = dirX * baseR;
+        y = dirY * baseR;
+        z = dirZ * baseR;
         roleParamA[i] = Math.random();
         roleParamB[i] = Math.random();
       } else if (role === 1) {
-        // left eye: ring + filled pupil
-        const isOutline = Math.random() < 0.55;
-        const pt = isOutline ? sampleOnRing(EYE_R, 0.25) : sampleInCircle(EYE_R * 0.8);
+        // left eye on front surface (small inset)
+        const uEye = Math.random();
+        const isOutline = Math.random() < 0.5;
+        const pt = isOutline ? sampleOnRing(EYE_R, 0.22) : sampleInCircle(EYE_R * 0.85);
         x = pt.x - EYE_X;
         y = pt.y + EYE_Y;
+        ({ x, y } = clampIntoFaceXY(x, y));
+        z = faceZFromXY(x, y) - randBetween(0.55, 0.95);
         roleParamA[i] = Math.random(); // u for line / angle
         roleParamB[i] = randBetween(0.85, 1.15);
       } else if (role === 2) {
-        const isOutline = Math.random() < 0.55;
-        const pt = isOutline ? sampleOnRing(EYE_R, 0.25) : sampleInCircle(EYE_R * 0.8);
+        // right eye
+        const isOutline = Math.random() < 0.5;
+        const pt = isOutline ? sampleOnRing(EYE_R, 0.22) : sampleInCircle(EYE_R * 0.85);
         x = pt.x + EYE_X;
         y = pt.y + EYE_Y;
+        ({ x, y } = clampIntoFaceXY(x, y));
+        z = faceZFromXY(x, y) - randBetween(0.55, 0.95);
         roleParamA[i] = Math.random();
         roleParamB[i] = randBetween(0.85, 1.15);
       } else {
-        // mouth: arc (smile)
+        // mouth: groove on front surface
         const u = Math.random();
         const theta = lerp(MOUTH_START, MOUTH_END, u);
         const r = MOUTH_R + randBetween(-0.42, 0.42);
@@ -542,10 +575,10 @@
         y = Math.sin(theta) * r + MOUTH_Y;
         roleParamA[i] = u;
         roleParamB[i] = randBetween(0.9, 1.12);
+        ({ x, y } = clampIntoFaceXY(x, y));
+        z = faceZFromXY(x, y) - randBetween(0.65, 1.15);
       }
 
-      // small depth jitter for glow layering
-      const z = randBetween(-0.6, 0.6) + randBetween(-0.2, 0.2);
       basePositions[o] = x;
       basePositions[o + 1] = y;
       basePositions[o + 2] = z;
@@ -676,9 +709,9 @@
     const sens = sensitivity;
     const hasFace = faceState.hasFace && faceTrackingEnabled;
 
-    const demoT = Math.max(0, now - appStartAt);
-    const yaw = hasFace ? faceSmooth.yaw : Math.sin(demoT * 0.00025) * 0.25;
-    const pitch = hasFace ? faceSmooth.pitch : Math.sin(demoT * 0.0002) * 0.18;
+    // Keep the smiley/head always facing the screen: ignore yaw/pitch (no tilt/rotation).
+    const yaw = 0;
+    const pitch = 0;
     const fx = hasFace ? faceSmooth.faceX : 0;
     const fy = hasFace ? faceSmooth.faceY : 0;
     const scale = hasFace ? faceSmooth.faceScale : 1.0;
@@ -730,16 +763,8 @@
     const pull = lerp(0.18, 0.42, clamp01((scale - 0.9) * 1.4)) * sens;
     const scatter = lerp(0.08, 0.26, clamp01((1.1 - scale) * 1.2)) * sens;
 
-    const windX = yaw * (1.2 + m.wind) * sens;
-    const windY = -pitch * (1.0 + m.wind * 0.7) * sens;
-
-    const rotY = yaw * 0.9 * sens;
-    const rotX = pitch * 0.75 * sens;
-
-    const rYc = Math.cos(rotY);
-    const rYs = Math.sin(rotY);
-    const rXc = Math.cos(rotX);
-    const rXs = Math.sin(rotX);
+    const windX = 0;
+    const windY = 0;
 
     const drift = m.drift + energy * 0.2;
     const cohesion = m.cohesion + pull * 0.25 + frown * 0.18;
@@ -784,7 +809,11 @@
 
         bx0 = lerp(arcX, fullX, openBlend);
         by0 = lerp(arcY, fullY, openBlend);
-        bz0 += Math.sin(fullTheta) * 0.35 * openBlend;
+        const clamped = clampIntoFaceXY(bx0, by0);
+        bx0 = clamped.x;
+        by0 = clamped.y;
+        // keep mouth as a groove on front surface; open => shallower & wider
+        bz0 = faceZFromXY(bx0, by0) - lerp(1.25, 0.55, openBlend) * jitter;
       } else if (role === 1 || role === 2) {
         const cx = role === 1 ? -SMILEY.EYE_X : SMILEY.EYE_X;
         const cy = SMILEY.EYE_Y;
@@ -798,20 +827,24 @@
 
         bx0 = cx + lerp(circleX, lineX, blinkBlend);
         by0 = cy + lerp(circleY, lineY, blinkBlend) - blinkBlend * 0.15;
+        const clamped = clampIntoFaceXY(bx0, by0);
+        bx0 = clamped.x;
+        by0 = clamped.y;
+        // open eye => deeper inset; blink => near surface line
+        bz0 = faceZFromXY(bx0, by0) - lerp(0.95, 0.4, blinkBlend) * jitter;
       } else {
         const facePulse = 1 + smileEffective * 0.03 + mouthOpen * 0.05 - frown * 0.02;
         bx0 *= facePulse;
         by0 *= facePulse;
       }
 
-      // rotate base
-      let bx = bx0 * rYc - bz0 * rYs;
-      let bz = bx0 * rYs + bz0 * rYc;
-      let by = by0 * rXc - bz * rXs;
-      bz = by0 * rXs + bz * rXc;
+      // keep smiley facing camera: no global rotation/tilt
+      let bx = bx0;
+      let by = by0;
+      let bz = bz0;
 
-      // target radius modulation (closer => tighter, energy => tighter)
-      const targetScale = lerp(1.12, 0.78, clamp01((scale - 1) * 0.9)) + energy * 0.18;
+      // target radius modulation (closer => slightly tighter)
+      const targetScale = lerp(1.06, 0.88, clamp01((scale - 1) * 0.9)) + energy * 0.06;
       bx *= targetScale;
       by *= targetScale;
       bz *= targetScale;
@@ -892,14 +925,15 @@
       updateParticles(dt, now);
     }
 
-    points.rotation.y += (0.0012 + mode.drift * 0.0009) * (0.6 + faceSmooth.smile * 0.6);
-    points.rotation.x += (0.0007 + mode.drift * 0.0007) * (0.6 + faceSmooth.mouthOpen * 0.6);
+    // keep smiley always facing screen (no global rotation)
+    points.rotation.set(0, 0, 0);
 
     renderer.render(scene, camera);
   }
 
   // ---- UI / wiring ----
   function setTrackingStatus() {
+    if (!trackDot || !trackText) return;
     if (!faceTrackingEnabled) {
       setDot(trackDot, "bad");
       trackText.textContent = "演示模式（无追踪）";
@@ -941,8 +975,8 @@
   }
 
   function togglePreview() {
-    const showing = video.style.opacity === "1";
-    video.style.opacity = showing ? "0" : "1";
+    // Preview window is intentionally disabled for the kid-friendly UI.
+    video.style.opacity = "0";
   }
 
   modeSelect.addEventListener("change", updateMode);
@@ -990,10 +1024,12 @@
     e.stopPropagation();
     requestFullscreen();
   });
-  togglePreviewBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    togglePreview();
-  });
+  if (togglePreviewBtn) {
+    togglePreviewBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePreview();
+    });
+  }
 
   panel.addEventListener("pointerdown", (e) => e.stopPropagation());
 
@@ -1012,14 +1048,16 @@
     canvas.addEventListener("click", onCanvasToggle);
   }
 
-  helpBtn.addEventListener("click", () => {
-    helpText.style.display = helpText.style.display === "none" ? "block" : "none";
-  });
+  if (helpBtn) {
+    helpBtn.addEventListener("click", () => {
+      helpText.style.display = helpText.style.display === "none" ? "block" : "none";
+    });
+  }
 
   async function startExperience({ demoOnly }) {
     startBtn.disabled = true;
-    demoBtn.disabled = true;
-    helpBtn.disabled = true;
+    if (demoBtn) demoBtn.disabled = true;
+    if (helpBtn) helpBtn.disabled = true;
 
     applyQuality(getSelectedTier());
     initThree();
@@ -1040,7 +1078,8 @@
       await initCamera();
       initFaceMesh();
       faceTrackingEnabled = true;
-      video.style.opacity = "1";
+      // Always keep the camera preview hidden (no top-right mini window).
+      video.style.opacity = "0";
       setTrackingStatus();
       requestAnimationFrame(faceLoop);
     } catch (err) {
@@ -1054,7 +1093,7 @@
   }
 
   startBtn.addEventListener("click", () => startExperience({ demoOnly: false }));
-  demoBtn.addEventListener("click", () => startExperience({ demoOnly: true }));
+  if (demoBtn) demoBtn.addEventListener("click", () => startExperience({ demoOnly: true }));
 
   // polling status
   setInterval(setTrackingStatus, 250);
