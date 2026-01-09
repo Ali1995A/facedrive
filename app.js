@@ -195,8 +195,6 @@
       faceScale: 0,
       eyeOpen: 0,
       browEye: 0,
-      noseEyeX: 0,
-      noseEyeY: 0,
     },
   };
 
@@ -209,8 +207,6 @@
     calibrationState.base.faceScale = 0;
     calibrationState.base.eyeOpen = 0;
     calibrationState.base.browEye = 0;
-    calibrationState.base.noseEyeX = 0;
-    calibrationState.base.noseEyeY = 0;
 
     calibration.classList.remove("hidden");
     calibText.textContent = "准备摄像头…";
@@ -348,14 +344,11 @@
     // scale: normalized by calibration (bigger => closer)
     const faceScale = clamp(safeDiv(eyeDist, calibrationState.base.eyeDist || eyeDist, 1), 0.6, 1.8);
 
-    // yaw/pitch: nose offset relative to eye center, normalized by eye distance.
-    // Use calibration baseline so "facing forward" maps close to 0.
+    // yaw/pitch: nose offset relative to eye center, normalized by eye distance
     const nx = safeDiv(nose.x - midEye.x, eyeDist, 0);
     const ny = safeDiv(nose.y - midEye.y, eyeDist, 0);
-    const nx0 = nx - (calibrationState.base.noseEyeX || 0);
-    const ny0 = ny - (calibrationState.base.noseEyeY || 0);
-    const yaw = clamp(nx0 * 2.4, -1, 1);
-    const pitch = clamp(ny0 * 2.1, -1, 1);
+    const yaw = clamp(nx * 2.4, -1, 1);
+    const pitch = clamp(ny * 2.4, -1, 1);
 
     // mouth open
     const mouthOpenRatio = clamp(safeDiv(mouthOpen, calibrationState.base.faceScale || eyeDist, 0), 0, 0.9);
@@ -401,8 +394,6 @@
       calibrationState.base.faceScale += eyeDist;
       calibrationState.base.eyeOpen += eyeOpen;
       calibrationState.base.browEye += browEye;
-      calibrationState.base.noseEyeX += nx;
-      calibrationState.base.noseEyeY += ny;
 
       if (t >= 1) {
         const n = Math.max(1, calibrationState.samples);
@@ -411,8 +402,6 @@
         calibrationState.base.faceScale /= n;
         calibrationState.base.eyeOpen /= n;
         calibrationState.base.browEye /= n;
-        calibrationState.base.noseEyeX /= n;
-        calibrationState.base.noseEyeY /= n;
         calibrationState.active = false;
 
         calibText.textContent = "校准完成";
@@ -537,7 +526,6 @@
     EAR_R: 5.9,
     EAR_X: 8.7,
     EAR_Y: 9.4,
-    EAR_Z: 4.2, // push ears towards the camera (+z)
     EAR_SHARE: 0.28, // fraction of FACE particles that go to ears (0..1)
   };
 
@@ -559,21 +547,8 @@
   function generateSmiley() {
     // Smiley in XY plane with slight Z thickness.
     // Coordinate system: face centered at (0,0), radius ~ 12.
-    const {
-      FACE_R,
-      EYE_R,
-      EYE_Y,
-      EYE_X,
-      MOUTH_R,
-      MOUTH_Y,
-      MOUTH_START,
-      MOUTH_END,
-      EAR_R,
-      EAR_X,
-      EAR_Y,
-      EAR_Z,
-      EAR_SHARE,
-    } = SMILEY;
+    const { FACE_R, EYE_R, EYE_Y, EYE_X, MOUTH_R, MOUTH_Y, MOUTH_START, MOUTH_END, EAR_R, EAR_X, EAR_Y, EAR_SHARE } =
+      SMILEY;
 
     for (let i = 0; i < MAX_PARTICLES; i++) {
       const o = i * 3;
@@ -597,16 +572,12 @@
         // Optionally blend in "Mickey ears" (two smaller spheres above the head).
         let cx = 0;
         let cy = 0;
-        let cz = 0;
         let r0 = FACE_R;
-        let isEar = false;
         if (MICKEY_EARS_ENABLED && Math.random() < EAR_SHARE) {
           const side = Math.random() < 0.5 ? -1 : 1;
           cx = side * EAR_X;
           cy = EAR_Y;
-          cz = EAR_Z;
           r0 = EAR_R;
-          isEar = true;
         }
 
         const theta = Math.random() * Math.PI * 2;
@@ -615,13 +586,13 @@
         let dirX = rxy * Math.cos(theta);
         let dirY = rxy * Math.sin(theta);
         let dirZ = zDir0;
-        if (isEar || Math.random() < 0.58) dirZ = Math.abs(dirZ);
+        if (Math.random() < 0.58) dirZ = Math.abs(dirZ);
 
         const surface = Math.random() < 0.55;
         const baseR = surface ? r0 + randBetween(-0.2, 0.2) : r0 * Math.cbrt(Math.random()) * 0.98;
         x = cx + dirX * baseR;
         y = cy + dirY * baseR;
-        z = cz + dirZ * baseR;
+        z = dirZ * baseR;
         roleParamA[i] = Math.random();
         roleParamB[i] = Math.random();
       } else if (role === ROLE.LEFT_EYE || role === ROLE.RIGHT_EYE) {
@@ -717,8 +688,7 @@
     setFogEnabled(quality.fog);
 
     camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(0, 0.2, 32);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(0, 1.2, 32);
 
     generateSmiley();
 
@@ -1078,7 +1048,7 @@
 
       // Convert normalized yaw/pitch (-1..1) into radians.
       const targetYaw = clamp(yaw, -1, 1) * 0.85; // ~49°
-      const targetPitch = clamp(pitch, -1, 1) * -0.5; // ~29° (more "straight on")
+      const targetPitch = clamp(pitch, -1, 1) * -0.65; // ~37° (negative feels like nod-down)
       headGroup.rotation.y = lerp(headGroup.rotation.y, targetYaw, clamp01(dt * 6));
       headGroup.rotation.x = lerp(headGroup.rotation.x, targetPitch, clamp01(dt * 6));
 
