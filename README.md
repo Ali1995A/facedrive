@@ -28,6 +28,7 @@ npm run dev
 ## URL 参数
 
 - `?quality=high|medium|low`：强制性能档位（覆盖 Auto 选择）
+- `?ears=mickey|off`：头部造型（默认 `mickey`，`off` 为纯球形）
 
 ## 兼容性提示
 

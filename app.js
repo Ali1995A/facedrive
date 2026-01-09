@@ -65,6 +65,8 @@
 
   const qs = new URLSearchParams(location.search);
   const forcedQuality = (qs.get("quality") || "").toLowerCase();
+  const earsMode = (qs.get("ears") || "mickey").toLowerCase(); // ?ears=mickey|off
+  const MICKEY_EARS_ENABLED = !(earsMode === "0" || earsMode === "off" || earsMode === "false" || earsMode === "none");
 
   // ---- DOM ----
   const canvas = document.getElementById("canvas");
@@ -520,6 +522,11 @@
     MOUTH_Y: -6.15,
     MOUTH_START: Math.PI * 1.18,
     MOUTH_END: Math.PI * 1.82,
+    // Mickey-style ears (two spheres blended with the main head).
+    EAR_R: 5.9,
+    EAR_X: 8.7,
+    EAR_Y: 9.4,
+    EAR_SHARE: 0.28, // fraction of FACE particles that go to ears (0..1)
   };
 
   function clampIntoFaceXY(x, y) {
@@ -540,7 +547,8 @@
   function generateSmiley() {
     // Smiley in XY plane with slight Z thickness.
     // Coordinate system: face centered at (0,0), radius ~ 12.
-    const { FACE_R, EYE_R, EYE_Y, EYE_X, MOUTH_R, MOUTH_Y, MOUTH_START, MOUTH_END } = SMILEY;
+    const { FACE_R, EYE_R, EYE_Y, EYE_X, MOUTH_R, MOUTH_Y, MOUTH_START, MOUTH_END, EAR_R, EAR_X, EAR_Y, EAR_SHARE } =
+      SMILEY;
 
     for (let i = 0; i < MAX_PARTICLES; i++) {
       const o = i * 3;
@@ -561,6 +569,17 @@
       if (role === ROLE.FACE) {
         // 3D head volume (sphere): mostly surface shell + some interior fill.
         // Slightly bias points to the front so the face reads clearly, while still looking like a ball.
+        // Optionally blend in "Mickey ears" (two smaller spheres above the head).
+        let cx = 0;
+        let cy = 0;
+        let r0 = FACE_R;
+        if (MICKEY_EARS_ENABLED && Math.random() < EAR_SHARE) {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          cx = side * EAR_X;
+          cy = EAR_Y;
+          r0 = EAR_R;
+        }
+
         const theta = Math.random() * Math.PI * 2;
         const zDir0 = Math.random() * 2 - 1; // -1..1
         const rxy = Math.sqrt(Math.max(0, 1 - zDir0 * zDir0));
@@ -570,9 +589,9 @@
         if (Math.random() < 0.58) dirZ = Math.abs(dirZ);
 
         const surface = Math.random() < 0.55;
-        const baseR = surface ? FACE_R + randBetween(-0.2, 0.2) : FACE_R * Math.cbrt(Math.random()) * 0.98;
-        x = dirX * baseR;
-        y = dirY * baseR;
+        const baseR = surface ? r0 + randBetween(-0.2, 0.2) : r0 * Math.cbrt(Math.random()) * 0.98;
+        x = cx + dirX * baseR;
+        y = cy + dirY * baseR;
         z = dirZ * baseR;
         roleParamA[i] = Math.random();
         roleParamB[i] = Math.random();
