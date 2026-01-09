@@ -99,6 +99,40 @@
   const trackText = document.getElementById("trackText");
   const toast = document.getElementById("toast");
 
+  // Remove any injected "links.json" floating button/link (common in some hosts / preview toolbars).
+  function stripLinksJsonUi(root = document) {
+    const els = root.querySelectorAll("a, button");
+    els.forEach((el) => {
+      const text = (el.textContent || "").trim().toLowerCase();
+      const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
+      const href = (el.getAttribute("href") || "").trim().toLowerCase();
+      if (
+        text === "links.json" ||
+        aria === "links.json" ||
+        href === "links.json" ||
+        href.endsWith("/links.json") ||
+        href.endsWith("links.json") ||
+        href.includes("links.json")
+      ) {
+        el.remove();
+      }
+    });
+  }
+
+  stripLinksJsonUi();
+  (() => {
+    let pending = false;
+    const schedule = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        stripLinksJsonUi();
+      });
+    };
+    new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+  })();
+
   // ---- Utils ----
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
