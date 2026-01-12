@@ -92,7 +92,9 @@
   const sensitivityRange = document.getElementById("sensitivityRange");
   const particleRange = document.getElementById("particleRange");
   const colorPicker = document.getElementById("colorPicker");
-  const colorModeSelect = document.getElementById("colorModeSelect");
+  const colorGlowBtn = document.getElementById("colorGlowBtn");
+  const colorSolidBtn = document.getElementById("colorSolidBtn");
+  const swatchButtons = panel ? Array.from(panel.querySelectorAll(".swatch[data-color]")) : [];
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const togglePreviewBtn = document.getElementById("togglePreviewBtn");
 
@@ -599,13 +601,17 @@
   }
   refreshBaseColor();
 
-  let colorMode = (colorModeSelect && colorModeSelect.value) || "glow"; // "glow" | "solid"
+  let colorMode = "glow"; // "glow" | "solid"
 
   function applyColorMode(nextMode) {
     colorMode = nextMode === "solid" ? "solid" : "glow";
     wantsColors = colorMode === "glow";
-    if (colorModeSelect) colorModeSelect.value = colorMode;
     if (colorPicker) colorPicker.disabled = colorMode !== "solid";
+    if (colorGlowBtn) colorGlowBtn.classList.toggle("active", colorMode === "glow");
+    if (colorSolidBtn) colorSolidBtn.classList.toggle("active", colorMode === "solid");
+    if (swatchButtons.length) {
+      swatchButtons.forEach((btn) => btn.classList.toggle("active", (btn.dataset.color || "").toLowerCase() === (baseColorHex || "").toLowerCase()));
+    }
     if (!material) return;
     material.vertexColors = wantsColors;
     material.color = wantsColors ? new THREE.Color(0xffffff) : new THREE.Color(baseColorHex || "#9bb7ff");
@@ -1666,12 +1672,35 @@
         material.color = new THREE.Color(baseColorHex);
         material.needsUpdate = true;
       }
+      applyColorMode("solid");
     });
   }
-  if (colorModeSelect) {
-    colorModeSelect.addEventListener("change", () => {
-      applyColorMode(colorModeSelect.value);
-      showToast(colorMode === "solid" ? "颜色：自定义" : "颜色：默认");
+  if (colorGlowBtn) {
+    colorGlowBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      applyColorMode("glow");
+      showToast("颜色");
+    });
+  }
+  if (colorSolidBtn) {
+    colorSolidBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      applyColorMode("solid");
+      showToast("颜色");
+    });
+  }
+  if (swatchButtons.length) {
+    swatchButtons.forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const c = (btn.dataset.color || "").trim();
+        if (!c) return;
+        baseColorHex = c;
+        if (colorPicker) colorPicker.value = c;
+        refreshBaseColor();
+        applyColorMode("solid");
+        showToast("颜色");
+      });
     });
   }
 

@@ -135,6 +135,17 @@
       .btn:active {
         transform: translateY(1px);
       }
+      .sr-only {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+      }
       .btn.primary {
         background: linear-gradient(135deg, #ff3d7f, #ffb000);
         border-color: rgba(255, 255, 255, 0.34);
@@ -276,6 +287,52 @@
       .panel-row .btn {
         flex: 1;
         min-width: 120px;
+      }
+      .icon-row {
+        display: flex;
+        gap: 10px;
+      }
+      .icon-btn {
+        flex: 1;
+        min-height: 44px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        cursor: pointer;
+      }
+      .icon-btn.active {
+        border-color: rgba(255, 255, 255, 0.38);
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .swatch {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+        cursor: pointer;
+        position: relative;
+      }
+      .swatch::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: var(--swatch, transparent);
+      }
+      .swatch.active {
+        outline: 3px solid rgba(255, 255, 255, 0.78);
+        outline-offset: 2px;
       }
 
       #toast {
@@ -431,11 +488,25 @@
             <input id="colorPicker" type="color" value="#9bb7ff" style="height: 38px; width: 100%; border: 0; background: transparent" />
           </div>
           <div class="field">
-            <label for="colorModeSelect">颜色模式</label>
-            <select id="colorModeSelect">
-              <option value="glow">默认（渐变辉光）</option>
-              <option value="solid">自定义（纯色）</option>
-            </select>
+            <label class="sr-only" for="colorPicker">颜色</label>
+            <div class="icon-row" role="group" aria-label="颜色模式">
+              <button class="icon-btn active" id="colorGlowBtn" type="button" aria-label="默认颜色（渐变辉光）">
+                <span aria-hidden="true">◯</span>
+                <span class="sr-only">默认</span>
+              </button>
+              <button class="icon-btn" id="colorSolidBtn" type="button" aria-label="自定义颜色（纯色）">
+                <span aria-hidden="true">●</span>
+                <span class="sr-only">自定义</span>
+              </button>
+            </div>
+            <div class="swatches" aria-label="颜色快捷选择">
+              <button class="swatch" type="button" data-color="#9bb7ff" style="--swatch: #9bb7ff" aria-label="颜色 1"></button>
+              <button class="swatch" type="button" data-color="#ff3d7f" style="--swatch: #ff3d7f" aria-label="颜色 2"></button>
+              <button class="swatch" type="button" data-color="#ffb000" style="--swatch: #ffb000" aria-label="颜色 3"></button>
+              <button class="swatch" type="button" data-color="#2ee59d" style="--swatch: #2ee59d" aria-label="颜色 4"></button>
+              <button class="swatch" type="button" data-color="#7c5cff" style="--swatch: #7c5cff" aria-label="颜色 5"></button>
+              <button class="swatch" type="button" data-color="#ffffff" style="--swatch: #ffffff" aria-label="颜色 6"></button>
+            </div>
           </div>
         </div>
         <div class="panel-row">
