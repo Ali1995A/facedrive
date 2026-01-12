@@ -92,6 +92,7 @@
   const sensitivityRange = document.getElementById("sensitivityRange");
   const particleRange = document.getElementById("particleRange");
   const colorPicker = document.getElementById("colorPicker");
+  const colorModeSelect = document.getElementById("colorModeSelect");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const togglePreviewBtn = document.getElementById("togglePreviewBtn");
 
@@ -590,12 +591,26 @@
   const baseColor = new THREE.Color(baseColorHex);
   const baseHsl = { h: 0, s: 0, l: 0 };
   const tmpColor = new THREE.Color();
+  let wantsColors = true;
 
   function refreshBaseColor() {
     baseColor.set(baseColorHex || "#9bb7ff");
     baseColor.getHSL(baseHsl);
   }
   refreshBaseColor();
+
+  let colorMode = (colorModeSelect && colorModeSelect.value) || "glow"; // "glow" | "solid"
+
+  function applyColorMode(nextMode) {
+    colorMode = nextMode === "solid" ? "solid" : "glow";
+    wantsColors = colorMode === "glow";
+    if (colorModeSelect) colorModeSelect.value = colorMode;
+    if (colorPicker) colorPicker.disabled = colorMode !== "solid";
+    if (!material) return;
+    material.vertexColors = wantsColors;
+    material.color = wantsColors ? new THREE.Color(0xffffff) : new THREE.Color(baseColorHex || "#9bb7ff");
+    material.needsUpdate = true;
+  }
 
   // Camera + FaceMesh
   let stream = null;
@@ -893,7 +908,6 @@
   const roleParamC = new Float32Array(MAX_PARTICLES); // role-specific 0..1 (extra)
   const PARTICLE_BASE_SIZE = LITE_DEVICE ? 0.16 : 0.18;
   // Per-particle colors define the "Sphere glow" look; keep enabled and throttle on lite devices.
-  let wantsColors = true;
   let colorUpdateFlip = 0;
 
   let lastRenderAt = 0;
@@ -1146,6 +1160,7 @@
       sizeAttenuation: true,
       color: wantsColors ? 0xffffff : baseColorHex,
     });
+    applyColorMode(colorMode);
 
     points = new THREE.Points(geometry, material);
     headGroup = new THREE.Group();
@@ -1653,6 +1668,12 @@
       }
     });
   }
+  if (colorModeSelect) {
+    colorModeSelect.addEventListener("change", () => {
+      applyColorMode(colorModeSelect.value);
+      showToast(colorMode === "solid" ? "颜色：自定义" : "颜色：默认");
+    });
+  }
 
   qualitySelect.addEventListener("change", async () => {
     const tier = getSelectedTier();
@@ -1783,6 +1804,7 @@
   updateMode();
   video.style.opacity = "0";
   setTrackingStatus();
+  applyColorMode(colorMode);
 
   // Prewarm FaceMesh assets on slow environments to avoid long "calibration" stalls.
   if (LITE_DEVICE) {
