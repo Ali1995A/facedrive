@@ -891,6 +891,7 @@
   const roleParamA = new Float32Array(MAX_PARTICLES); // role-specific 0..1
   const roleParamB = new Float32Array(MAX_PARTICLES); // role-specific jitter
   const roleParamC = new Float32Array(MAX_PARTICLES); // role-specific 0..1 (extra)
+  const PARTICLE_BASE_SIZE = LITE_DEVICE ? 0.16 : 0.18;
   // Per-particle colors define the "Sphere glow" look; keep enabled and throttle on lite devices.
   let wantsColors = true;
   let colorUpdateFlip = 0;
@@ -1135,7 +1136,7 @@
     geometry.setDrawRange(0, 1);
 
     material = new THREE.PointsMaterial({
-      size: 0.14,
+      size: PARTICLE_BASE_SIZE,
       transparent: true,
       opacity: 0.95,
       depthWrite: false,
@@ -1506,7 +1507,7 @@
       headGroup.position.z = lerp(headGroup.position.z, targetZ, clamp01(dt * 4));
 
       if (material) {
-        const baseSize = 0.14;
+        const baseSize = PARTICLE_BASE_SIZE;
         const sizeMin = LITE_DEVICE ? 0.86 : 0.78;
         const sizeMax = LITE_DEVICE ? 1.55 : 1.75;
         const targetSize = baseSize * lerp(sizeMin, sizeMax, t);
