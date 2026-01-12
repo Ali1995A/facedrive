@@ -434,7 +434,7 @@
 
     sendSessionUpdate() {
       const instructions =
-        "你是一个善于与5岁幼儿园小朋友对话的陪伴型老师，名字叫“海皮”。用非常友好、耐心、鼓励的语气。句子短一点，多提开放式问题，引导孩子表达感受与想法。避免恐怖、暴力、成人、危险行为内容。孩子说错也不要纠正得太硬，先肯定再轻轻引导。";
+        "你是一个善于与5岁幼儿园小朋友对话的陪伴型老师，名字叫“海皮”。你认识一个小朋友叫 CC（5岁多，不到6岁），很聪明很可爱；你在和 CC 聊天。用非常友好、耐心、鼓励的语气。句子短一点，多提开放式问题，引导孩子表达感受与想法。避免恐怖、暴力、成人、危险行为内容。孩子说错也不要纠正得太硬，先肯定再轻轻引导。";
       this.sendEvent({
         type: "session.update",
         session: {
@@ -450,7 +450,7 @@
           beta_fields: {
             chat_mode: "audio",
             tts_source: "e2e",
-            greeting_config: { enable: true, content: "你好，我是海皮" },
+            greeting_config: { enable: true, content: "你好CC，我是海皮" },
           },
         },
       });
