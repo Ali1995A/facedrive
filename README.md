@@ -9,6 +9,7 @@
 - 头部动作：摇头 / 点头会带动整颗粒子头部摆动
 - 距离交互：靠近摄像头变大、远离变小
 - 发光点阵风格：金色↔青色辉光 + 边缘高光（低端设备会自动降档）
+- 海皮语音：接入智谱 GLM-Realtime，面向 5 岁幼儿园小朋友的陪伴型老师「海皮」
 
 ## 本地运行
 
@@ -19,6 +20,18 @@ npm run dev
 ```
 
 打开 `http://localhost:5173`。
+
+### 海皮语音（GLM-Realtime）
+
+部署到 Vercel 时，在项目环境变量里配置：
+
+- `ZHIPU_API_KEY`：形如 `{id}.{secret}`（智谱开放平台 API Key）
+
+本地要用海皮语音，需要启动带 `/api/zhipu-token` 的开发服务：
+
+- 直接在页面里的「本地测试 API Key」输入框粘贴 Key（仅保存在本机 localStorage）
+- 或运行：`npm run dev` / `npm run dev:local`（本地 Node 服务器，带 `/api/zhipu-token`，支持读取 `.env`）
+- 或使用 Vercel CLI：`npx vercel dev`（推荐，能本地跑 `/api/zhipu-token`）
 
 ## 操作说明
 

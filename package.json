@@ -4,7 +4,13 @@
   "version": "0.1.0",
   "description": "Face-driven Three.js particle universe (static single-page app).",
   "scripts": {
-    "dev": "npx --yes http-server -p 5173 -c-1 ."
+    "dev": "node dev-server.js",
+    "dev:static": "npx --yes http-server -p 5173 -c-1 .",
+    "dev:local": "node dev-server.js",
+    "dev:vercel": "npx --yes vercel dev",
+    "check:zhipu": "node scripts/zhipu-auth-check.js"
+  },
+  "devDependencies": {
+    "ws": "^8.19.0"
   }
 }
-

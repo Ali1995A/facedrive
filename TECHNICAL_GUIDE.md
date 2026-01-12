@@ -111,3 +111,20 @@
 
 - 粒子颜色：面板中的颜色选择器（基础色）
 - 连续摇头：在基础色之上做 Hue 循环偏移
+
+---
+
+## 8. 海皮语音（GLM-Realtime）
+
+在完成“开始玩”后，页面会额外请求麦克风权限，并连接智谱 GLM-Realtime，实现实时语音对话：
+
+- 前端：`index.html` 的 `#voiceDock/#voicePanel` + `app.js` 的 `HappiRealtimeVoice`
+- 后端（Vercel Serverless Function）：`api/zhipu-token.js`（从 `ZHIPU_API_KEY` 生成 JWT）
+
+基本链路：
+
+1. `getUserMedia({ audio: true })` 获取麦克风
+2. Web Audio 把音频重采样到 16kHz PCM16，按块发送 `input_audio_buffer.append`
+3. 松开“按住说话”后发送 `input_audio_buffer.commit` + `response.create`
+4. 接收 `response.audio.delta`（24kHz PCM16）并在前端排队播放
+5. 通过 `beta_fields.greeting_config` 让“海皮”在连接后自动自我介绍：“你好，我是海皮”

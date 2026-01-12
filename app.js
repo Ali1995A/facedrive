@@ -99,6 +99,10 @@
   const trackText = document.getElementById("trackText");
   const toast = document.getElementById("toast");
 
+  // Voice UI (Happi / 海皮) — kid mode: single mic button
+  const voiceDock = document.getElementById("voiceDock");
+  const voiceMicBtn = document.getElementById("voiceMicBtn");
+
   // Remove any injected "links.json" floating button/link (common in some hosts / preview toolbars).
   function stripLinksJsonUi(root = document) {
     const els = root.querySelectorAll("a, button");
@@ -151,6 +155,405 @@
     dotEl.classList.remove("good", "bad");
     if (state === "good") dotEl.classList.add("good");
     if (state === "bad") dotEl.classList.add("bad");
+  }
+
+  // ---- Voice (GLM-Realtime) helpers ----
+  const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `evt_${Math.random().toString(16).slice(2)}`);
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(binary);
+  }
+
+  function base64ToBytes(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  function int16ToFloat32(int16) {
+    const out = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) out[i] = Math.max(-1, Math.min(1, int16[i] / 32768));
+    return out;
+  }
+
+  function float32ToInt16Bytes(float32) {
+    const out = new Uint8Array(float32.length * 2);
+    const view = new DataView(out.buffer);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      view.setInt16(i * 2, (s < 0 ? s * 0x8000 : s * 0x7fff) | 0, true);
+    }
+    return out;
+  }
+
+  function resampleFloat32Linear(input, inRate, outRate) {
+    if (inRate === outRate) return input;
+    const ratio = inRate / outRate;
+    const outLength = Math.max(1, Math.floor(input.length / ratio));
+    const out = new Float32Array(outLength);
+    for (let i = 0; i < outLength; i++) {
+      const pos = i * ratio;
+      const idx = Math.floor(pos);
+      const frac = pos - idx;
+      const s0 = input[idx] ?? 0;
+      const s1 = input[idx + 1] ?? s0;
+      out[i] = s0 + (s1 - s0) * frac;
+    }
+    return out;
+  }
+
+  function appendVoiceLine(role, text) {
+    // Kid mode: no transcript UI. Keep toast minimal for debug.
+    if (role === "系统：" && text) showToast(text);
+  }
+
+  class HappiRealtimeVoice {
+    constructor() {
+      this.ws = null;
+      this.wsReady = false;
+      this.audioCtx = null;
+      this.micStream = null;
+      this.micSource = null;
+      this.micProcessor = null;
+      this.isCapturing = false;
+      this.closed = false;
+
+      this.inRate = 0;
+      this.outRate = 16000;
+      this.playInRate = 24000;
+      this.playQueueTime = 0;
+
+      this.pendingInBytes = [];
+      this.pendingInBytesLen = 0;
+      this.targetChunkBytes = 6400; // 100ms @ 16kHz mono 16-bit
+
+      this.partialAssistantText = "";
+      this.lastError = "";
+      this.connecting = false;
+    }
+
+    setStatus(text, dotState) {
+      // Kid mode: keep the single button always available.
+      // We gate behavior in event handlers instead of disabling the button.
+    }
+
+    setError(message) {
+      this.lastError = message || "";
+      this.setStatus(`连接失败`, "bad");
+      if (message) appendVoiceLine("系统：", message);
+    }
+
+    async ensureAudioContext() {
+      if (this.audioCtx) return;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) throw new Error("当前浏览器不支持 AudioContext");
+      this.audioCtx = new Ctx();
+      if (this.audioCtx.state === "suspended") await this.audioCtx.resume();
+      this.playQueueTime = this.audioCtx.currentTime;
+    }
+
+    async requestMic() {
+      if (this.micStream) return;
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      await this.ensureAudioContext();
+
+      this.micSource = this.audioCtx.createMediaStreamSource(this.micStream);
+      const bufferSize = LITE_DEVICE ? 4096 : 2048;
+      const processor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
+      this.inRate = this.audioCtx.sampleRate;
+      processor.onaudioprocess = (e) => {
+        if (!this.wsReady || !this.isCapturing) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const down = resampleFloat32Linear(input, this.inRate, this.outRate);
+        const bytes = float32ToInt16Bytes(down);
+        this.pendingInBytes.push(bytes);
+        this.pendingInBytesLen += bytes.length;
+        while (this.pendingInBytesLen >= this.targetChunkBytes) {
+          this.flushInputChunk(this.targetChunkBytes);
+        }
+      };
+      this.micSource.connect(processor);
+      processor.connect(this.audioCtx.destination); // keep processor alive on iOS
+      this.micProcessor = processor;
+    }
+
+    flushInputChunk(targetBytes) {
+      const out = new Uint8Array(targetBytes);
+      let offset = 0;
+      while (offset < targetBytes && this.pendingInBytes.length) {
+        const head = this.pendingInBytes[0];
+        const need = targetBytes - offset;
+        if (head.length <= need) {
+          out.set(head, offset);
+          offset += head.length;
+          this.pendingInBytes.shift();
+        } else {
+          out.set(head.subarray(0, need), offset);
+          this.pendingInBytes[0] = head.subarray(need);
+          offset += need;
+        }
+      }
+      this.pendingInBytesLen -= targetBytes;
+      this.sendEvent({ type: "input_audio_buffer.append", audio: bytesToBase64(out) });
+    }
+
+    async getWsConfig() {
+      try {
+        const res = await fetch("/api/zhipu-token", { cache: "no-store" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = json?.error ? String(json.error) : `token api status ${res.status}`;
+          throw new Error(msg);
+        }
+        if (!json?.token) throw new Error("token api missing token");
+        return json;
+      } catch (err) {
+        const msg = err?.message || String(err);
+        throw new Error(`语音服务未配置：${msg}`);
+      }
+    }
+
+    // Note: no browser-side API key input in kid mode.
+
+    async connect() {
+      if (this.connecting) return;
+      this.closed = false;
+      this.connecting = true;
+      this.setStatus("连接中…", "");
+      await this.ensureAudioContext();
+      await this.requestMic();
+
+      const cfg = await this.getWsConfig();
+      const token = cfg.token;
+
+      const base = "wss://open.bigmodel.cn/api/paas/v4/realtime";
+      const candidatesRaw = [
+        ...(Array.isArray(cfg.wsUrls) ? cfg.wsUrls : []),
+        cfg.wsUrl,
+        `${base}?token=${encodeURIComponent(token)}`,
+        `${base}?access_token=${encodeURIComponent(token)}`,
+        `${base}?Authorization=${encodeURIComponent(token)}`,
+        `${base}?token=${encodeURIComponent(`Bearer ${token}`)}`,
+        `${base}?access_token=${encodeURIComponent(`Bearer ${token}`)}`,
+      ].filter(Boolean);
+
+      const seen = new Set();
+      const candidates = candidatesRaw.filter((u) => (seen.has(u) ? false : (seen.add(u), true)));
+
+      const tryConnectOnce = (wsUrl) =>
+        new Promise((resolve, reject) => {
+          let opened = false;
+          let gotErrorEvent = "";
+          const ws = new WebSocket(wsUrl);
+          this.ws = ws;
+
+          const timer = setTimeout(() => {
+            try {
+              ws.close();
+            } catch {}
+            reject(new Error("WebSocket 连接超时"));
+          }, 6500);
+
+          ws.onopen = () => {
+            opened = true;
+            clearTimeout(timer);
+            this.wsReady = true;
+            this.setStatus("已连接（按住说话）", "good");
+            this.sendSessionUpdate();
+            resolve();
+          };
+          ws.onmessage = (ev) => {
+            // if server replies with an error event before we even start talking, surface it
+            try {
+              const msg = JSON.parse(ev.data);
+              if (msg?.type === "error") {
+                gotErrorEvent = msg?.error?.message || msg?.message || "unknown error";
+              }
+            } catch {}
+            this.onServerMessage(ev.data);
+          };
+          ws.onerror = () => {
+            // onerror provides no details; rely on close code/reason
+          };
+          ws.onclose = (ev) => {
+            clearTimeout(timer);
+            const wasReady = this.wsReady;
+            this.wsReady = false;
+            if (this.closed) return;
+            if (wasReady) {
+              this.setStatus(`已断开 (code=${ev?.code || 0})`, "bad");
+              return;
+            }
+            const reason = ev?.reason ? ` reason=${ev.reason}` : "";
+            const hint = gotErrorEvent ? ` server=${gotErrorEvent}` : "";
+            reject(new Error(`WebSocket 已关闭 (code=${ev?.code || 0})${reason}${hint}`));
+          };
+        });
+
+      const errors = [];
+      for (const url of candidates) {
+        try {
+          await tryConnectOnce(url);
+          this.connecting = false;
+          return;
+        } catch (e) {
+          errors.push(`[${errors.length + 1}] ${e?.message || String(e)}`);
+          try {
+            this.ws?.close();
+          } catch {}
+          this.ws = null;
+        }
+      }
+      this.connecting = false;
+      throw new Error(errors.join("；"));
+    }
+
+    sendEvent(evt) {
+      if (!this.wsReady || !this.ws) return;
+      const msg = {
+        event_id: uuid(),
+        client_timestamp: Date.now(),
+        ...evt,
+      };
+      this.ws.send(JSON.stringify(msg));
+    }
+
+    sendSessionUpdate() {
+      const instructions =
+        "你是一个善于与5岁幼儿园小朋友对话的陪伴型老师，名字叫“海皮”。用非常友好、耐心、鼓励的语气。句子短一点，多提开放式问题，引导孩子表达感受与想法。避免恐怖、暴力、成人、危险行为内容。孩子说错也不要纠正得太硬，先肯定再轻轻引导。";
+      this.sendEvent({
+        type: "session.update",
+        session: {
+          model: "glm-realtime",
+          modalities: ["audio", "text"],
+          instructions,
+          voice: "tongtong",
+          input_audio_format: "pcm16",
+          output_audio_format: "pcm",
+          input_audio_noise_reduction: { type: "far_field" },
+          temperature: 0.6,
+          max_response_output_tokens: "inf",
+          beta_fields: {
+            chat_mode: "audio",
+            tts_source: "e2e",
+            greeting_config: { enable: true, content: "你好，我是海皮" },
+          },
+        },
+      });
+    }
+
+    onServerMessage(raw) {
+      let msg = null;
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const type = msg?.type || "";
+      if (type === "error") {
+        this.setError(msg?.error?.message || msg?.message || "unknown");
+        return;
+      }
+      if (type === "response.audio_transcript.delta") {
+        this.partialAssistantText += msg.delta || "";
+        return;
+      }
+      if (type === "response.audio_transcript.done") {
+        const text = (this.partialAssistantText || "").trim();
+        this.partialAssistantText = "";
+        if (text) appendVoiceLine("海皮：", text);
+        return;
+      }
+      if (type === "conversation.item.input_audio_transcription.completed") {
+        const text = msg?.transcript || msg?.text || "";
+        if (text) appendVoiceLine("你：", text);
+        return;
+      }
+      if (type === "response.audio.delta") {
+        const b64 = msg?.delta || msg?.audio || "";
+        if (b64) this.playPcmChunk(b64);
+      }
+    }
+
+    playPcmChunk(b64) {
+      if (!this.audioCtx) return;
+      const bytes = base64ToBytes(b64);
+      const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+      const float = int16ToFloat32(int16);
+      const out = resampleFloat32Linear(float, this.playInRate, this.audioCtx.sampleRate);
+      const buf = this.audioCtx.createBuffer(1, out.length, this.audioCtx.sampleRate);
+      buf.copyToChannel(out, 0, 0);
+      const src = this.audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.audioCtx.destination);
+      const now = this.audioCtx.currentTime;
+      const t = Math.max(now + 0.02, this.playQueueTime);
+      src.start(t);
+      this.playQueueTime = t + buf.duration;
+    }
+
+    startCapture() {
+      if (!this.wsReady) return;
+      this.isCapturing = true;
+      this.pendingInBytes = [];
+      this.pendingInBytesLen = 0;
+      this.sendEvent({ type: "input_audio_buffer.clear" });
+    }
+
+    stopCaptureAndRespond() {
+      if (!this.wsReady) return;
+      this.isCapturing = false;
+      while (this.pendingInBytesLen >= this.targetChunkBytes) {
+        this.flushInputChunk(this.targetChunkBytes);
+      }
+      if (this.pendingInBytesLen > 0) {
+        this.flushInputChunk(this.pendingInBytesLen);
+      }
+      this.pendingInBytes = [];
+      this.pendingInBytesLen = 0;
+      this.sendEvent({ type: "input_audio_buffer.commit" });
+      this.sendEvent({ type: "response.create" });
+    }
+
+    async shutdown() {
+      this.closed = true;
+      this.wsReady = false;
+      this.isCapturing = false;
+      this.connecting = false;
+      try {
+        this.ws?.close();
+      } catch {}
+      this.ws = null;
+
+      try {
+        this.micProcessor?.disconnect();
+      } catch {}
+      try {
+        this.micSource?.disconnect();
+      } catch {}
+      this.micProcessor = null;
+      this.micSource = null;
+
+      try {
+        this.micStream?.getTracks()?.forEach((t) => t.stop());
+      } catch {}
+      this.micStream = null;
+      this.setStatus("已断开", "bad");
+    }
   }
 
   function resolveInitialTier() {
@@ -1115,6 +1518,77 @@
   }
 
   // ---- UI / wiring ----
+  const happiVoice = voiceDock ? new HappiRealtimeVoice() : null;
+  if (happiVoice) {
+    try {
+      happiVoice.setStatus("未连接", "");
+    } catch {}
+    if (voiceMicBtn) voiceMicBtn.disabled = false;
+
+    const showVoiceDock = () => voiceDock && voiceDock.classList.remove("hidden");
+
+    const connectIfNeeded = async () => {
+      if (!happiVoice || happiVoice.wsReady) return;
+      try {
+        await happiVoice.connect();
+      } catch (err) {
+        const msg = err?.message || String(err);
+        happiVoice.setError(msg);
+        showToast(msg);
+      }
+    };
+
+    let isHoldingMic = false;
+
+    const startHold = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isHoldingMic = true;
+      if (!happiVoice.wsReady) {
+        if (happiVoice.connecting) return;
+        // First interaction: connect on demand (also a valid user gesture for mic permission on iOS).
+        showToast("连接中…");
+        connectIfNeeded().then(() => {
+          if (!isHoldingMic) return;
+          if (!happiVoice.wsReady) return;
+          if (voiceMicBtn) voiceMicBtn.classList.add("talking");
+          happiVoice.startCapture();
+        });
+        return;
+      }
+      if (voiceMicBtn) voiceMicBtn.classList.add("talking");
+      happiVoice.startCapture();
+    };
+    const endHold = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isHoldingMic = false;
+      if (!happiVoice.wsReady) return;
+      if (voiceMicBtn) voiceMicBtn.classList.remove("talking");
+      happiVoice.stopCaptureAndRespond();
+    };
+
+    if (voiceMicBtn) {
+      if ("PointerEvent" in window) {
+        voiceMicBtn.addEventListener("pointerdown", startHold);
+        voiceMicBtn.addEventListener("pointerup", endHold);
+        voiceMicBtn.addEventListener("pointercancel", endHold);
+      } else {
+        voiceMicBtn.addEventListener("touchstart", startHold, { passive: false });
+        voiceMicBtn.addEventListener("touchend", endHold, { passive: false });
+        voiceMicBtn.addEventListener("touchcancel", endHold, { passive: false });
+        voiceMicBtn.addEventListener("mousedown", startHold);
+        voiceMicBtn.addEventListener("mouseup", endHold);
+      }
+    }
+
+    if (voiceDock) voiceDock.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+    // Expose for internal calls (auto-start after "开始玩")
+    happiVoice._showDock = showVoiceDock;
+    happiVoice._connectIfNeeded = connectIfNeeded;
+  }
+
   function setTrackingStatus() {
     if (!trackDot || !trackText) return;
     if (!faceTrackingEnabled) {
@@ -1251,6 +1725,10 @@
       overlay.classList.add("hidden");
       setTrackingStatus();
       showToast("已进入演示模式");
+      if (happiVoice) {
+        happiVoice._showDock?.();
+        happiVoice._connectIfNeeded?.();
+      }
       return;
     }
 
@@ -1265,6 +1743,10 @@
       video.style.opacity = "0";
       setTrackingStatus();
       requestAnimationFrame(faceLoop);
+      if (happiVoice) {
+        happiVoice._showDock?.();
+        happiVoice._connectIfNeeded?.();
+      }
       if (LITE_DEVICE) {
         const startedAt = performance.now();
         const t = setInterval(() => {
