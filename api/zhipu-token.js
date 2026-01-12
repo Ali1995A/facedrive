@@ -45,14 +45,50 @@ module.exports = (req, res) => {
       return;
     }
 
-    const apiKey = process.env.ZHIPU_API_KEY || "";
-    if (!apiKey.trim()) {
+    const rawApiKey = process.env.ZHIPU_API_KEY || "";
+    const apiKey = rawApiKey.trim();
+    const dotCount = (apiKey.match(/\./g) || []).length;
+    const diag = {
+      hasEnv: !!apiKey,
+      totalLen: apiKey.length,
+      dotCount,
+      hasEllipsis: apiKey.includes("...") || apiKey.includes("…"),
+      startsWithBearer: /^bearer\s+/i.test(apiKey),
+    };
+
+    if (!apiKey) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json; charset=utf-8");
       res.setHeader("Cache-Control", "no-store, max-age=0");
       res.end(
         JSON.stringify({
-          error: "ZHIPU_API_KEY 为空：请在 Vercel 环境变量配置，或本地使用 `ZHIPU_API_KEY={id}.{secret}` 启动。",
+          error:
+            "ZHIPU_API_KEY 为空：请在 Vercel 项目 Settings → Environment Variables 配置 ZHIPU_API_KEY 后 Redeploy（注意选择对应环境：Production/Preview）。",
+          diag,
+        })
+      );
+      return;
+    }
+    if (diag.hasEllipsis) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
+      res.end(
+        JSON.stringify({
+          error: "ZHIPU_API_KEY 看起来是掩码（包含 ...），请使用控制台“复制”按钮获取完整的 {id}.{secret}。",
+          diag,
+        })
+      );
+      return;
+    }
+    if (diag.dotCount !== 1) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
+      res.end(
+        JSON.stringify({
+          error: "ZHIPU_API_KEY 格式不正确：必须是 {id}.{secret}（且只包含一个点）。",
+          diag,
         })
       );
       return;
