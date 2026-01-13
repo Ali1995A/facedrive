@@ -23,6 +23,7 @@ function loadDotEnv(filePath = path.join(process.cwd(), ".env")) {
 loadDotEnv();
 
 const handleZhipuToken = require("./api/zhipu-token.js");
+const handleMemoryGet = require("./api/memory-get.js");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -79,6 +80,10 @@ function requestHandler(req, res) {
   if (url.pathname === "/api/zhipu-token" || url.pathname === "/api/zhipu-token/") {
     req.query = Object.fromEntries(url.searchParams.entries());
     return handleZhipuToken(req, res);
+  }
+  if (url.pathname === "/api/memory-get" || url.pathname === "/api/memory-get/") {
+    req.query = Object.fromEntries(url.searchParams.entries());
+    return handleMemoryGet(req, res);
   }
   return serveStatic(req, res);
 }
