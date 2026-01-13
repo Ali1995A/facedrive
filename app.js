@@ -59,7 +59,9 @@
     (navigator.deviceMemory ? navigator.deviceMemory <= 4 : true);
   const PREFERS_REDUCED_MOTION =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const LITE_DEVICE = IS_WECHAT || IS_IPAD_PRO_1;
+  // On iOS (including iPad Chrome), camera+WASM pipelines can stall more easily.
+  // Treat iOS as "lite" to prewarm assets and use safer throttles.
+  const LITE_DEVICE = IS_WECHAT || IS_IOS || IS_IPAD_PRO_1;
   if (LITE_DEVICE) document.documentElement.classList.add("lite");
   const MIRROR_MODE = true;
 
@@ -831,6 +833,12 @@
     lastFaceResultAt = performance.now();
     const lm = results.multiFaceLandmarks && results.multiFaceLandmarks[0];
     faceState.hasFace = !!lm;
+    if (calibrationState.active) {
+      const t = clamp01((performance.now() - calibrationState.startedAt) / calibrationState.durationMs);
+      calibBar.style.width = `${Math.round(t * 100)}%`;
+      calibText.textContent = "检测人脸中…";
+      calibHint.textContent = "请将脸对准中央，保持 1 秒钟稳定。";
+    }
     if (!lm) return;
 
     const nose = lm[1];
@@ -941,7 +949,17 @@
     faceLastSentAt = now;
     faceMesh
       .send({ image: video })
-      .catch(() => {})
+      .catch((e) => {
+        // Surface FaceMesh pipeline failures (common cause of "stuck at calibration" on iOS).
+        if (!faceState._reportedSendError) {
+          faceState._reportedSendError = true;
+          const msg = e?.message || String(e);
+          showToast("人脸识别加载失败，请刷新或换网络");
+          try {
+            console.warn("[FaceMesh send error]", msg);
+          } catch {}
+        }
+      })
       .finally(() => {
         faceBusy = false;
         requestAnimationFrame(faceLoop);
