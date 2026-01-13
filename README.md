@@ -26,6 +26,7 @@ npm run dev
 部署到 Vercel 时，在项目环境变量里配置：
 
 - `ZHIPU_API_KEY`：形如 `{id}.{secret}`（智谱开放平台 API Key）
+- （可选）只读长期记忆：配置 `MEMORY_API_URL`（如 `https://mem.cciscc.cc`）与 `MEMORY_API_KEY`（服务端调用密钥）
 
 本地要用海皮语音，需要启动带 `/api/zhipu-token` 的开发服务：
 
@@ -42,6 +43,7 @@ npm run dev
 
 - `?quality=high|medium|low`：强制性能档位（覆盖 Auto 选择）
 - `?ears=mickey|off`：头部造型（默认 `mickey`，`off` 为纯球形）
+- `?memory=1`：启用“海皮只读长期记忆”注入（默认关闭，不影响现有体验）
 
 ## 兼容性提示
 

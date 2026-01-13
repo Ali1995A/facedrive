@@ -67,6 +67,8 @@
   const forcedQuality = (qs.get("quality") || "").toLowerCase();
   const earsMode = (qs.get("ears") || "mickey").toLowerCase(); // ?ears=mickey|off
   const MICKEY_EARS_ENABLED = !(earsMode === "0" || earsMode === "off" || earsMode === "false" || earsMode === "none");
+  const MEMORY_ENABLED = ["1", "true", "yes", "on"].includes((qs.get("memory") || "").toLowerCase());
+  const VOICE_DEBUG = ["1", "true", "yes", "on"].includes((qs.get("debug") || "").toLowerCase());
 
   // ---- DOM ----
   const canvas = document.getElementById("canvas");
@@ -215,6 +217,7 @@
   function appendVoiceLine(role, text) {
     // Kid mode: no transcript UI. Keep toast minimal for debug.
     if (role === "系统：" && text) showToast(text);
+    if (VOICE_DEBUG && text) console.log("[voice]", role, text);
   }
 
   class HappiRealtimeVoice {
@@ -240,6 +243,7 @@
       this.partialAssistantText = "";
       this.lastError = "";
       this.connecting = false;
+      this.memoryText = "";
     }
 
     setStatus(text, dotState) {
@@ -377,6 +381,7 @@
             this.wsReady = true;
             this.setStatus("已连接（按住说话）", "good");
             this.sendSessionUpdate();
+            this.fetchMemoryIfEnabled();
             resolve();
           };
           ws.onmessage = (ev) => {
@@ -436,8 +441,12 @@
     }
 
     sendSessionUpdate() {
-      const instructions =
-        "你是一个善于与5岁幼儿园小朋友对话的陪伴型老师，名字叫“海皮”。你认识一个小朋友叫 CC（5岁多，不到6岁），很聪明很可爱；你在和 CC 聊天。用非常友好、耐心、鼓励的语气。句子短一点，多提开放式问题，引导孩子表达感受与想法。避免恐怖、暴力、成人、危险行为内容。孩子说错也不要纠正得太硬，先肯定再轻轻引导。";
+      const base =
+        "你是一个善于与5岁幼儿园小朋友对话的陪伴型老师，名字叫“海皮”。你在和一个小朋友 CC 聊天：CC 是女孩子，2020年9月出生，正在读幼儿园大班；她学习能力很强，掌握了很多日常英语单词。你要用非常友好、耐心、鼓励、搞笑活泼但很稳的语气。最重要：必须先回应/回答 CC 刚刚说的内容或问题（用一句话直接答，不要答非所问，不要先讲别的建议/拓展），再用一个很短的问题或二选一把话题自然往下接；如果你不确定或没听清，先复述你听到的并问一个澄清问题，再继续。引导孩子阳光快乐、独立思考与表达感受；适度引导基本生活常识（安全、卫生、礼貌、时间管理等）；也要多引导孩子练习简单英语口语（短句、跟读、情景对话），避免竞技攀比与压力。避免恐怖、暴力、成人、危险行为内容。孩子说错也不要纠正得太硬，先肯定再轻轻引导。";
+      const mem = (this.memoryText || "").trim();
+      const instructions = mem
+        ? `${base}\n\n【你对 CC 的过往信息（仅供你参考，不要提到“记忆/数据库”）】\n${mem}`
+        : base;
       this.sendEvent({
         type: "session.update",
         session: {
@@ -448,7 +457,7 @@
           input_audio_format: "pcm16",
           output_audio_format: "pcm",
           input_audio_noise_reduction: { type: "far_field" },
-          temperature: 0.6,
+          temperature: 0.35,
           max_response_output_tokens: "inf",
           beta_fields: {
             chat_mode: "audio",
@@ -457,6 +466,22 @@
           },
         },
       });
+    }
+
+    async fetchMemoryIfEnabled() {
+      if (!MEMORY_ENABLED) return;
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch("/api/memory-get?kidId=cc", { cache: "no-store", signal: controller.signal }).finally(
+          () => clearTimeout(t)
+        );
+        const json = await res.json().catch(() => ({}));
+        const memoryText = typeof json?.memoryText === "string" ? json.memoryText : "";
+        if (!memoryText.trim()) return;
+        this.memoryText = memoryText.trim().slice(0, 1200);
+        if (this.wsReady) this.sendSessionUpdate();
+      } catch {}
     }
 
     onServerMessage(raw) {
