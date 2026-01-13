@@ -674,6 +674,8 @@
     startedAt: 0,
     durationMs: 1200,
     samples: 0,
+    lastHadFaceAt: 0,
+    forcedExit: false,
     base: {
       eyeDist: 0,
       mouthWidth: 0,
@@ -687,6 +689,8 @@
     calibrationState.active = true;
     calibrationState.startedAt = performance.now();
     calibrationState.samples = 0;
+    calibrationState.lastHadFaceAt = 0;
+    calibrationState.forcedExit = false;
     calibrationState.base.eyeDist = 0;
     calibrationState.base.mouthWidth = 0;
     calibrationState.base.faceScale = 0;
@@ -936,6 +940,31 @@
 
   function faceLoop(now) {
     if (!faceTrackingEnabled || !faceMesh || !video) return;
+    // Watchdog: if FaceMesh never detects a face on iOS/Chrome, don't block the whole experience at calibration.
+    // Keep tracking running in background; this only hides the calibration overlay.
+    if (calibrationState.active) {
+      const waited = performance.now() - calibrationState.startedAt;
+      if (faceState.hasFace) calibrationState.lastHadFaceAt = performance.now();
+
+      // No face seen for a while: update hint so it doesn't feel "stuck".
+      if (!faceState.hasFace && waited > 4500) {
+        calibText.textContent = "还没检测到人脸…";
+        calibHint.textContent = "请靠近一点、光线亮一点，或者换 Safari 再试。";
+        setDot(calibDot, "bad");
+      }
+
+      // Hard timeout: let user continue even if tracking isn't ready.
+      if (!calibrationState.forcedExit && waited > 12000 && !faceState.hasFace) {
+        calibrationState.forcedExit = true;
+        calibrationState.active = false;
+        calibBar.style.width = "100%";
+        calibText.textContent = "先开始玩（可稍后再试）";
+        calibHint.textContent = "如果一直识别不到人脸，建议换网络或用 Safari。";
+        setDot(calibDot, "bad");
+        setTimeout(() => calibration.classList.add("hidden"), 700);
+        setTimeout(() => overlay.classList.add("hidden"), 900);
+      }
+    }
     const interval = quality.faceFrameIntervalMs || 0;
     if (interval && now - faceLastSentAt < interval) {
       requestAnimationFrame(faceLoop);
