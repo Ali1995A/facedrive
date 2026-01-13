@@ -736,14 +736,36 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("Camera not supported");
 
     const tier = getSelectedTier();
-    const videoConstraints = {
-      facingMode: "user",
-      width: { ideal: QUALITY_PRESETS[tier].video.width },
-      height: { ideal: QUALITY_PRESETS[tier].video.height },
-      frameRate: LITE_DEVICE ? { ideal: 20, max: 24 } : { ideal: 30, max: 30 },
-    };
+    const idealW = QUALITY_PRESETS[tier].video.width;
+    const idealH = QUALITY_PRESETS[tier].video.height;
+    // iOS can be picky about constraints; try a few progressively looser options.
+    const candidates = [
+      {
+        facingMode: "user",
+        width: { ideal: idealW },
+        height: { ideal: idealH },
+        frameRate: LITE_DEVICE ? { ideal: 20, max: 24 } : { ideal: 30, max: 30 },
+      },
+      { facingMode: "user", width: { ideal: idealW }, height: { ideal: idealH } },
+      { facingMode: "user" },
+      true,
+    ];
 
-    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+    let lastErr = null;
+    for (const c of candidates) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: c, audio: false });
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        try {
+          stream?.getTracks()?.forEach((t) => t.stop());
+        } catch {}
+        stream = null;
+      }
+    }
+    if (!stream) throw lastErr || new Error("getUserMedia failed");
     video.srcObject = stream;
     // iOS/WeChat can be picky; ensure inline playback stays active.
     video.muted = true;
@@ -751,7 +773,16 @@
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
     await video.play().catch(() => {});
-    await waitForVideoReady(video, 9000);
+    try {
+      await waitForVideoReady(video, 12000);
+    } catch (e) {
+      // Some WebKit builds don't update videoWidth while fully transparent; retry with minimal opacity.
+      const prevOpacity = video.style.opacity;
+      video.style.opacity = "0.01";
+      await video.play().catch(() => {});
+      await waitForVideoReady(video, 8000);
+      video.style.opacity = prevOpacity;
+    }
   }
 
   function stopCamera() {

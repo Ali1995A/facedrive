@@ -56,15 +56,17 @@
         display: block;
       }
       #video {
-        /* Keep video "rendered" for iOS/WeChat frame delivery, but move it offscreen. */
+        /* Keep video "rendered" for iOS/WeChat frame delivery.
+           Some iOS builds may stall frames when the element is far offscreen. */
         position: fixed;
-        left: -10000px;
-        top: -10000px;
-        width: 2px;
-        height: 2px;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
         object-fit: cover;
         opacity: 0;
         pointer-events: none;
+        z-index: -1;
       }
       #overlay {
         position: fixed;
