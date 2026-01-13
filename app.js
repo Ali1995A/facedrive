@@ -457,7 +457,7 @@
           model: "glm-realtime",
           modalities: ["audio", "text"],
           instructions,
-          voice: "tongtong",
+          voice: "xiaochen",
           input_audio_format: "pcm16",
           output_audio_format: "pcm",
           input_audio_noise_reduction: { type: "far_field" },
