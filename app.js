@@ -53,6 +53,8 @@
   const IS_IOS =
     /iPad|iPhone|iPod/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const IS_IPAD = /iPad/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const IS_STANDALONE =
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
   const IS_IPAD_PRO_1 =
     IS_IPAD &&
     Math.max(screen.width, screen.height) <= 1366 &&
@@ -1893,8 +1895,9 @@
       await initCamera();
       ensureFaceMeshReady();
       faceTrackingEnabled = true;
-      // Always keep the camera preview hidden (no top-right mini window).
-      video.style.opacity = "0";
+      // Keep the camera preview effectively invisible.
+      // In iOS standalone webapps (Add to Home Screen), fully-transparent video may stall frames.
+      video.style.opacity = IS_IOS && IS_STANDALONE ? "0.01" : "0";
       setTrackingStatus();
       requestAnimationFrame(faceLoop);
       if (happiVoice) {
