@@ -249,9 +249,10 @@
       this.connecting = false;
       this.memoryText = "";
 
-      this.pendingResponse = false;
-      this.pendingResponseTimer = null;
       this.turnSpeaker = "kid"; // "kid" | "dad"
+      this.responseSpeaker = "kid"; // speaker used for current response
+      this.lastTurnId = 0;
+      this.dadHandledForTurn = 0;
     }
 
     setStatus(text, dotState) {
@@ -265,6 +266,19 @@
       let t = raw.replace(/[，,。.!?？、；;:：…]+$/g, "").trim();
       t = t.toLowerCase();
       return /(?:^|[^a-z])over$/.test(t);
+    }
+
+    stripOverSuffix(text) {
+      const raw = String(text || "");
+      let t = raw.trim();
+      t = t.replace(/[\s，,。.!?？、；;:：…]*over[\s，,。.!?？、；;:：…]*$/i, "");
+      t = t.replace(/[，,。.!?？、；;:：…]+$/g, "").trim();
+      return t;
+    }
+
+    sendResponseCreate() {
+      this.responseSpeaker = this.turnSpeaker;
+      this.sendEvent({ type: "response.create" });
     }
 
     setError(message) {
@@ -525,8 +539,9 @@
         const text = (this.partialAssistantText || "").trim();
         this.partialAssistantText = "";
         if (text) appendVoiceLine("海皮：", text);
-        if (this.turnSpeaker !== "kid") {
+        if (this.responseSpeaker !== "kid") {
           this.turnSpeaker = "kid";
+          this.responseSpeaker = "kid";
           this.sendSessionUpdate();
         }
         return;
@@ -534,17 +549,33 @@
       if (type === "conversation.item.input_audio_transcription.completed") {
         const text = msg?.transcript || msg?.text || "";
         if (text) appendVoiceLine("你：", text);
-        if (this.pendingResponse) {
-          this.pendingResponse = false;
-          if (this.pendingResponseTimer) clearTimeout(this.pendingResponseTimer);
-          this.pendingResponseTimer = null;
+        const isDad = this.detectDadModeFromTranscript(text);
+        if (!isDad) return;
 
-          const isDad = this.detectDadModeFromTranscript(text);
-          this.turnSpeaker = isDad ? "dad" : "kid";
-          if (VOICE_DEBUG && isDad) console.log("[voice] dad-mode detected (over)");
-          this.sendSessionUpdate();
-          this.sendEvent({ type: "response.create" });
-        }
+        const turnId = this.lastTurnId;
+        if (this.dadHandledForTurn === turnId) return;
+        this.dadHandledForTurn = turnId;
+
+        const cleaned = this.stripOverSuffix(text);
+        if (!cleaned) return;
+
+        if (VOICE_DEBUG) console.log("[voice] dad-mode detected (over), restarting response");
+        try {
+          this.sendEvent({ type: "response.cancel" });
+        } catch {}
+        this.turnSpeaker = "dad";
+        this.sendSessionUpdate();
+        try {
+          this.sendEvent({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: cleaned }],
+            },
+          });
+        } catch {}
+        this.sendResponseCreate();
         return;
       }
       if (type === "response.audio.delta") {
@@ -590,16 +621,9 @@
       this.pendingInBytes = [];
       this.pendingInBytesLen = 0;
       this.sendEvent({ type: "input_audio_buffer.commit" });
-      this.pendingResponse = true;
-      if (this.pendingResponseTimer) clearTimeout(this.pendingResponseTimer);
-      this.pendingResponseTimer = setTimeout(() => {
-        if (!this.pendingResponse) return;
-        this.pendingResponse = false;
-        this.pendingResponseTimer = null;
-        this.turnSpeaker = "kid";
-        this.sendSessionUpdate();
-        this.sendEvent({ type: "response.create" });
-      }, 1200);
+      this.lastTurnId++;
+      this.turnSpeaker = "kid";
+      this.sendResponseCreate();
     }
 
     async shutdown() {
