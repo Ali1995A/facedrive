@@ -127,4 +127,4 @@
 2. Web Audio 把音频重采样到 16kHz PCM16，按块发送 `input_audio_buffer.append`
 3. 松开“按住说话”后发送 `input_audio_buffer.commit` + `response.create`
 4. 接收 `response.audio.delta`（24kHz PCM16）并在前端排队播放
-5. 通过 `beta_fields.greeting_config` 让“海皮”在连接后自动自我介绍：“你好，我是海皮”
+5. 通过 `beta_fields.greeting_config` 让“海皮”在连接后自动自我介绍：“你好，我是海皮，你是CC吗？”

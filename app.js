@@ -466,7 +466,7 @@
           beta_fields: {
             chat_mode: "audio",
             tts_source: "e2e",
-            greeting_config: { enable: true, content: "你好，我是CC的爸爸" },
+            greeting_config: { enable: true, content: "你好，我是海皮，你是CC吗？" },
           },
         },
       });
