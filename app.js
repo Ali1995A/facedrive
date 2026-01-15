@@ -248,11 +248,23 @@
       this.lastError = "";
       this.connecting = false;
       this.memoryText = "";
+
+      this.pendingResponse = false;
+      this.pendingResponseTimer = null;
+      this.turnSpeaker = "kid"; // "kid" | "dad"
     }
 
     setStatus(text, dotState) {
       // Kid mode: keep the single button always available.
       // We gate behavior in event handlers instead of disabling the button.
+    }
+
+    detectDadModeFromTranscript(text) {
+      const raw = String(text || "").trim();
+      if (!raw) return false;
+      let t = raw.replace(/[，,。.!?？、；;:：…]+$/g, "").trim();
+      t = t.toLowerCase();
+      return /(?:^|[^a-z])over$/.test(t);
     }
 
     setError(message) {
@@ -447,10 +459,15 @@
     sendSessionUpdate() {
       const base =
         "你是一个善于与5岁幼儿园小朋友对话的陪伴型老师，名字叫“海皮”。你在和一个小朋友 CC 聊天：CC 是女孩子，2020年9月出生，正在读幼儿园大班；她学习能力很强，掌握了很多日常英语单词。你要用非常友好、耐心、鼓励、搞笑活泼但很稳的语气。最重要：必须先回应/回答 CC 刚刚说的内容或问题（用一句话直接答，不要答非所问，不要先讲别的建议/拓展），再用一个很短的问题或二选一把话题自然往下接；如果你不确定或没听清，先复述你听到的并问一个澄清问题，再继续。引导孩子阳光快乐、独立思考与表达感受；适度引导基本生活常识（安全、卫生、礼貌、时间管理等）；也要多引导孩子练习简单英语口语（短句、跟读、情景对话），避免竞技攀比与压力。避免恐怖、暴力、成人、危险行为内容。孩子说错也不要纠正得太硬，先肯定再轻轻引导。\n\n【说话人识别规则】默认认为说话人是小朋友 CC；如果用户这句话最后以单词“over”结束（不区分大小写，允许后面带标点或空格），说明说话人是 CC 的爸爸。此时请切换为面向成年人的沟通方式：简短、清晰、可执行，不用哄小孩的口吻；如讨论 CC 的行为/情绪/习惯，请给爸爸具体做法与一句示例话术；不要把成人向内容直接说给孩子听。爸爸模式下可以用一句话确认（例如“收到，爸爸。”），但不要反复。";
+      const speakerHint =
+        this.turnSpeaker === "dad"
+          ? "【当前说话人：CC 的爸爸】这轮请用成人沟通方式：简短、清晰、可执行；如讨论 CC 的行为/情绪/习惯，请给爸爸具体做法与一句示例话术；避免使用哄小孩的语气；如果听到末尾有“over”，它只是结束标记，请忽略且不要复述。"
+          : "";
       const mem = (this.memoryText || "").trim();
+      const core = speakerHint ? `${base}\n\n${speakerHint}` : base;
       const instructions = mem
-        ? `${base}\n\n【你对 CC 的过往信息（仅供你参考，不要提到“记忆/数据库”）】\n${mem}`
-        : base;
+        ? `${core}\n\n【你对 CC 的过往信息（仅供你参考，不要提到“记忆/数据库”）】\n${mem}`
+        : core;
       this.sendEvent({
         type: "session.update",
         session: {
@@ -508,11 +525,26 @@
         const text = (this.partialAssistantText || "").trim();
         this.partialAssistantText = "";
         if (text) appendVoiceLine("海皮：", text);
+        if (this.turnSpeaker !== "kid") {
+          this.turnSpeaker = "kid";
+          this.sendSessionUpdate();
+        }
         return;
       }
       if (type === "conversation.item.input_audio_transcription.completed") {
         const text = msg?.transcript || msg?.text || "";
         if (text) appendVoiceLine("你：", text);
+        if (this.pendingResponse) {
+          this.pendingResponse = false;
+          if (this.pendingResponseTimer) clearTimeout(this.pendingResponseTimer);
+          this.pendingResponseTimer = null;
+
+          const isDad = this.detectDadModeFromTranscript(text);
+          this.turnSpeaker = isDad ? "dad" : "kid";
+          if (VOICE_DEBUG && isDad) console.log("[voice] dad-mode detected (over)");
+          this.sendSessionUpdate();
+          this.sendEvent({ type: "response.create" });
+        }
         return;
       }
       if (type === "response.audio.delta") {
@@ -558,7 +590,16 @@
       this.pendingInBytes = [];
       this.pendingInBytesLen = 0;
       this.sendEvent({ type: "input_audio_buffer.commit" });
-      this.sendEvent({ type: "response.create" });
+      this.pendingResponse = true;
+      if (this.pendingResponseTimer) clearTimeout(this.pendingResponseTimer);
+      this.pendingResponseTimer = setTimeout(() => {
+        if (!this.pendingResponse) return;
+        this.pendingResponse = false;
+        this.pendingResponseTimer = null;
+        this.turnSpeaker = "kid";
+        this.sendSessionUpdate();
+        this.sendEvent({ type: "response.create" });
+      }, 1200);
     }
 
     async shutdown() {
