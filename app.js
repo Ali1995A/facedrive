@@ -1082,7 +1082,8 @@
   const roleParamA = new Float32Array(MAX_PARTICLES); // role-specific 0..1
   const roleParamB = new Float32Array(MAX_PARTICLES); // role-specific jitter
   const roleParamC = new Float32Array(MAX_PARTICLES); // role-specific 0..1 (extra)
-  const PARTICLE_BASE_SIZE = LITE_DEVICE ? 0.16 : 0.18;
+  // Visual tweak: slightly larger particles for stronger presence.
+  const PARTICLE_BASE_SIZE = LITE_DEVICE ? 0.22 : 0.26;
   // Per-particle colors define the "Sphere glow" look; keep enabled and throttle on lite devices.
   let colorUpdateFlip = 0;
 
