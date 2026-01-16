@@ -1071,6 +1071,7 @@
   let geometry = null;
   let material = null;
   let fog = null;
+  let particleSpriteTexture = null;
 
   const MAX_PARTICLES = 16000;
   let activeParticleCount = 0;
@@ -1086,6 +1087,31 @@
   const PARTICLE_BASE_SIZE = LITE_DEVICE ? 0.22 : 0.26;
   // Per-particle colors define the "Sphere glow" look; keep enabled and throttle on lite devices.
   let colorUpdateFlip = 0;
+
+  function getParticleSpriteTexture() {
+    if (particleSpriteTexture) return particleSpriteTexture;
+    const size = 128;
+    const canvas2d = document.createElement("canvas");
+    canvas2d.width = size;
+    canvas2d.height = size;
+    const ctx = canvas2d.getContext("2d");
+    const c = size / 2;
+    const g = ctx.createRadialGradient(c, c, 0, c, c, c);
+    g.addColorStop(0.0, "rgba(255,255,255,1.0)");
+    g.addColorStop(0.18, "rgba(255,255,255,1.0)");
+    g.addColorStop(0.45, "rgba(255,255,255,0.55)");
+    g.addColorStop(1.0, "rgba(255,255,255,0.0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+
+    const tex = new THREE.CanvasTexture(canvas2d);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    if (tex.colorSpace !== undefined && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+    particleSpriteTexture = tex;
+    return tex;
+  }
 
   let lastRenderAt = 0;
   let lastUpdateAt = 0;
@@ -1326,16 +1352,19 @@
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     geometry.setDrawRange(0, 1);
 
+    const sprite = getParticleSpriteTexture();
     material = new THREE.PointsMaterial({
       size: PARTICLE_BASE_SIZE,
       transparent: true,
-      opacity: 0.95,
+      opacity: 1.0,
       depthWrite: false,
       depthTest: !!quality.depthTest,
       blending: THREE.AdditiveBlending,
       vertexColors: wantsColors,
       sizeAttenuation: true,
       color: wantsColors ? 0xffffff : baseColorHex,
+      map: sprite,
+      alphaMap: sprite,
     });
     applyColorMode(colorMode);
 
