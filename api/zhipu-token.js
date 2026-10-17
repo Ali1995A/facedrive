@@ -1,3 +1,5 @@
+const { withNodeGuard, integerEnv } = require("../server/ai-guard.cjs");
+const { policy } = require("../server/policy.cjs");
 const crypto = require("crypto");
 
 function base64url(input) {
@@ -36,7 +38,7 @@ function signJwtHs256({ apiKey, expSeconds }) {
   return { token: `${toSign}.${encodedSignature}`, payload };
 }
 
-module.exports = (req, res) => {
+const handler = (req, res) => {
   try {
     if (req.method !== "GET") {
       res.statusCode = 405;
@@ -93,8 +95,8 @@ module.exports = (req, res) => {
       );
       return;
     }
-    const expSecondsRaw = Array.isArray(req.query?.expSeconds) ? req.query.expSeconds[0] : req.query?.expSeconds;
-    const expSeconds = Math.min(3600, Math.max(60, Number(expSecondsRaw || 600) || 600));
+    // Server-owned lifetime; client query parameters cannot extend account-token exposure.
+    const expSeconds = integerEnv("ZHIPU_TOKEN_TTL_SECONDS", 600, 300, 1800);
 
     const { token, payload } = signJwtHs256({ apiKey, expSeconds });
     const base = "wss://open.bigmodel.cn/api/paas/v4/realtime";
@@ -125,4 +127,9 @@ module.exports = (req, res) => {
     res.setHeader("Cache-Control", "no-store, max-age=0");
     res.end(JSON.stringify({ error: message }));
   }
+};
+
+module.exports = (req, res) => {
+  if (req.method !== "GET") return handler(req, res);
+  return withNodeGuard(req, res, policy, handler);
 };
